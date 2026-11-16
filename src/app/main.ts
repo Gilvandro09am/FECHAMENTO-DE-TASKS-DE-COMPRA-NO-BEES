@@ -1,0 +1,558 @@
+/** Painel de tasks de compra — vespertina (pedidos do dia) e mês (faturado), lidos de /data. */
+import './estilo.css';
+import {
+  arquivoSetor,
+  INDICADORES,
+  NOME_CURTO,
+  STATUS_NOME,
+  VERSAO_MODELO,
+  type DetalheSetor,
+  type Fechamento,
+  type Indicador,
+  type Indice,
+  type IndiceDia,
+  type TipoFechamento,
+} from '../shared/modelo';
+import { calcular, type Filtros, type LinhaSetor, type Totais } from './agregacao';
+
+// ---------- utilidades ----------
+const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+const fmt = (n: number) => n.toLocaleString('pt-BR');
+const pct = (x: number | null, casas = 0) => (x == null ? '—' : (x * 100).toFixed(casas).replace('.', ',') + '%');
+const dataBr = (iso: string) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '');
+const horaBr = (iso: string) =>
+  new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+const esc = (s: unknown) =>
+  String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+const DIA_SEMANA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+const diaSemana = (iso: string) => DIA_SEMANA[new Date(iso + 'T12:00:00').getDay()];
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const mesBr = (chave: string) => `${MESES[+chave.slice(5, 7) - 1]}/${chave.slice(0, 4)}`;
+
+function toast(msg: string) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.setAttribute('role', 'status');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2400);
+}
+
+async function copiar(texto: string, ok: string) {
+  try {
+    await navigator.clipboard.writeText(texto);
+    toast(ok);
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = texto;
+    document.body.appendChild(ta);
+    ta.select();
+    const deu = document.execCommand('copy');
+    ta.remove();
+    toast(deu ? ok : 'Não foi possível copiar');
+  }
+}
+
+function baixar(nome: string, conteudo: string) {
+  // BOM para o Excel abrir acentos corretamente.
+  const blob = new Blob(['﻿' + conteudo], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = nome;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---------- textos de cada painel ----------
+const TXT: Record<
+  TipoFechamento,
+  { h1: string; destaque: string; feitas: string; colFeitas: string; colAp: string; colVal: string; lgF: string; lgB: string; pasta: string }
+> = {
+  dia: {
+    h1: 'Tasks de compra',
+    destaque: 'feitas no dia',
+    feitas: 'Feitas',
+    colFeitas: 'Feitas',
+    colAp: 'Aproveit.',
+    colVal: 'Já concl.',
+    lgF: 'Feitas no dia',
+    lgB: 'Abertas nos PDVs que compraram',
+    pasta: 'dias',
+  },
+  mes: {
+    h1: 'Tasks de compra',
+    destaque: 'concluídas no mês',
+    feitas: 'Concluídas',
+    colFeitas: 'Concluídas',
+    colAp: '% concl.',
+    colVal: 'Valid. BEES',
+    lgF: 'Concluídas (BEES + faturado)',
+    lgB: 'Total de tarefas',
+    pasta: 'meses',
+  },
+};
+
+// ---------- estado (espelhado na URL para links diretos por setor) ----------
+interface Estado extends Filtros {
+  modo: TipoFechamento;
+  chave: string;
+  aberto: string | null; // id do setor com a gaveta aberta
+  ordem: { k: string; d: 1 | -1 };
+}
+const url = new URLSearchParams(location.search);
+const EST: Estado = {
+  modo: url.get('m') === 'mes' ? 'mes' : 'dia',
+  chave: url.get('dia') ?? url.get('mes') ?? '',
+  rev: url.get('rev') ?? 'todas',
+  gv: url.get('gv') ?? 'todos',
+  ind: (INDICADORES as readonly string[]).includes(url.get('ind') ?? '') ? (url.get('ind') as Indicador) : 'todos',
+  busca: url.get('q') ?? '',
+  aberto: url.get('setor'),
+  ordem: { k: 'feitas', d: -1 },
+};
+const listaDoModo = (): IndiceDia[] => (EST.modo === 'dia' ? INDICE!.dias : INDICE!.meses);
+
+function gravarUrl() {
+  const p = new URLSearchParams();
+  if (EST.modo === 'mes') p.set('m', 'mes');
+  if (EST.chave && EST.chave !== listaDoModo()[0]?.chave) p.set(EST.modo === 'dia' ? 'dia' : 'mes', EST.chave);
+  if (EST.rev !== 'todas') p.set('rev', EST.rev);
+  if (EST.gv !== 'todos') p.set('gv', EST.gv);
+  if (EST.ind !== 'todos') p.set('ind', EST.ind);
+  if (EST.busca) p.set('q', EST.busca);
+  if (EST.aberto) p.set('setor', EST.aberto);
+  const q = p.toString();
+  history.replaceState(null, '', q ? `?${q}` : location.pathname);
+}
+
+// ---------- dados ----------
+let INDICE: Indice | null = null;
+let F: Fechamento | null = null;
+const cache = new Map<string, Fechamento>();
+const cacheDetalhe = new Map<string, DetalheSetor | 'carregando' | 'erro'>();
+
+async function buscarJson<T>(caminho: string): Promise<T> {
+  const r = await fetch(caminho, { cache: 'no-cache' });
+  if (!r.ok) throw new Error(`${caminho} respondeu ${r.status}`);
+  return r.json() as Promise<T>;
+}
+
+async function carregar(modo: TipoFechamento, chave: string) {
+  const k = `${modo}/${chave}`;
+  let f = cache.get(k);
+  if (!f) {
+    f = await buscarJson<Fechamento>(`data/${TXT[modo].pasta}/${chave}.json`);
+    cache.set(k, f);
+  }
+  F = f;
+  const aviso = $('aviso');
+  aviso.hidden = f.versao === VERSAO_MODELO;
+  aviso.className = 'aviso';
+  aviso.textContent = 'Este fechamento foi gerado com outra versão do painel. Recarregue a página.';
+}
+
+/** Detalhe dos PDVs do setor: no próprio fechamento ou num arquivo por setor (carregado sob demanda). */
+function detalheDoSetor(setorId: string): DetalheSetor | 'carregando' | 'erro' {
+  const f = F!;
+  if (!f.detalhePorSetor) return { pdvs: f.pdvs.filter((p) => p.setorId === setorId), textos: f.textos };
+  const k = `${f.tipo}/${f.chave}/${setorId}`;
+  const c = cacheDetalhe.get(k);
+  if (c) return c;
+  cacheDetalhe.set(k, 'carregando');
+  buscarJson<DetalheSetor>(`data/${TXT[f.tipo].pasta}/${f.chave}/${arquivoSetor(setorId)}.json`)
+    .then((d) => cacheDetalhe.set(k, d))
+    .catch(() => cacheDetalhe.set(k, 'erro'))
+    .finally(() => {
+      if (F === f && EST.aberto === setorId) render();
+    });
+  return 'carregando';
+}
+
+// ---------- render ----------
+function revendas() {
+  return [...new Set(F!.setores.map((s) => s.revenda))].sort();
+}
+
+function renderControles() {
+  $('segModo').innerHTML = (['dia', 'mes'] as const)
+    .map(
+      (m) =>
+        `<button type="button" data-modo="${m}" aria-pressed="${EST.modo === m}"${(m === 'dia' ? INDICE!.dias : INDICE!.meses).length ? '' : ' disabled'}>${
+          m === 'dia' ? 'Vespertina · pedidos do dia' : 'Mês · faturado'
+        }</button>`,
+    )
+    .join('');
+  $('selDia').innerHTML = listaDoModo()
+    .map((d) =>
+      EST.modo === 'dia'
+        ? `<option value="${d.chave}">${dataBr(d.dia)} · ${diaSemana(d.dia)} · ${fmt(d.feitas)} feitas</option>`
+        : `<option value="${d.chave}">${mesBr(d.chave)} · entregas até ${dataBr(d.dia)} · ${fmt(d.feitas)} concluídas</option>`,
+    )
+    .join('');
+  $<HTMLSelectElement>('selDia').value = EST.chave;
+  $('lblDia').textContent = EST.modo === 'dia' ? 'Fechamento' : 'Mês';
+
+  const revs = revendas();
+  if (EST.rev !== 'todas' && !revs.includes(EST.rev)) EST.rev = 'todas';
+  $('segRev').innerHTML = ['todas', ...revs]
+    .map((r) => `<button type="button" data-rev="${esc(r)}" aria-pressed="${EST.rev === r}">${r === 'todas' ? 'Todas' : esc(r)}</button>`)
+    .join('');
+
+  const gvs = [...new Set(F!.setores.filter((s) => EST.rev === 'todas' || s.revenda === EST.rev).map((s) => s.gv))].sort(
+    (a, b) => +a - +b,
+  );
+  if (EST.gv !== 'todos' && !gvs.includes(EST.gv)) EST.gv = 'todos';
+  $('selGv').innerHTML = `<option value="todos">Todos</option>` + gvs.map((g) => `<option value="${g}">GV ${g}</option>`).join('');
+  $<HTMLSelectElement>('selGv').value = EST.gv;
+
+  $('selInd').innerHTML =
+    `<option value="todos">Todos</option>` +
+    INDICADORES.map((i) => `<option value="${i}">${i.replace('DP · ', 'Portfólio · ')}</option>`).join('');
+  $<HTMLSelectElement>('selInd').value = EST.ind;
+  $<HTMLInputElement>('busca').value = EST.busca;
+}
+
+function renderCabecalho() {
+  const f = F!;
+  const t = TXT[f.tipo];
+  document.title = f.tipo === 'dia' ? 'Tasks de Compra do Dia' : 'Tasks de Compra do Mês';
+  $('ebrow').textContent = 'Pau Brasil · ' + revendas().join(' · ');
+  $('h1').innerHTML = `${t.h1} <span>${t.destaque}</span>`;
+  $('src').innerHTML =
+    f.tipo === 'dia'
+      ? `Vespertina de <b>${dataBr(f.dia)} (${diaSemana(f.dia)})</b>: ${fmt(f.resumo.pedidos)} pedidos do dia cruzados com ` +
+        `${fmt(f.resumo.tarefasNoEscopo)} tarefas de compra do BEES Force. Atualizado em ${horaBr(f.geradoEm)}.`
+      : `Mês de <b>${mesBr(f.chave)}</b>, entregas até <b>${dataBr(f.dia)}</b>: ${fmt(f.resumo.pedidos)} pedidos faturados cruzados com ` +
+        `${fmt(f.resumo.tarefasNoEscopo)} tarefas de compra do BEES Force. Atualizado em ${horaBr(f.geradoEm)}.`;
+  $('foot').innerHTML =
+    `Fontes: ${esc(f.arquivos.pedidos)} · ${f.arquivos.tarefas.map(esc).join(' · ')} · ${esc(f.arquivos.cesta)}. ` +
+    (f.tipo === 'dia'
+      ? `Pedidos bloqueados ${f.config.incluirBloqueados ? 'contam' : 'não contam'} como venda. Prévia calculada pelos pedidos; a validação oficial do BEES acontece após o faturamento.`
+      : 'Contam notas de venda e bonificação com entrega no mês; devolvidas e canceladas ficam de fora. Concluídas pelo faturado ainda aguardam a validação oficial do BEES.');
+  $('legF').textContent = t.lgF;
+  $('legB').textContent = t.lgB;
+}
+
+function renderKpis(tot: Totais) {
+  const ap = tot.base ? tot.feitas / tot.base : null;
+  $('kpis').innerHTML =
+    F!.tipo === 'dia'
+      ? `
+    <div class="kpi lead"><div class="k">Tasks feitas no dia</div><div class="v">${fmt(tot.feitas)}</div><div class="s">+ ${fmt(tot.parciais)} parciais (compraram, faltou quantidade)</div></div>
+    <div class="kpi"><div class="k">PDVs que compraram</div><div class="v">${fmt(tot.pdvComPedido)}</div><div class="s">de ${fmt(tot.pdvComTarefa)} PDVs com tarefa de compra</div></div>
+    <div class="kpi"><div class="k">Aproveitamento</div><div class="v">${pct(ap, 1)}</div><div class="s">${fmt(tot.feitas)} de ${fmt(tot.base)} tarefas abertas nesses PDVs</div></div>
+    <div class="kpi"><div class="k">Já concluídas antes</div><div class="v">${fmt(tot.validadas)}</div><div class="s">validadas no BEES ou já cobertas pelo faturado do mês</div></div>`
+      : `
+    <div class="kpi lead"><div class="k">Tasks concluídas no mês</div><div class="v">${fmt(tot.feitas)}</div><div class="s">${fmt(tot.validadas)} validadas no BEES + ${fmt(tot.feitasCalculo)} pelo faturado</div></div>
+    <div class="kpi"><div class="k">PDVs faturados</div><div class="v">${fmt(tot.pdvComPedido)}</div><div class="s">de ${fmt(tot.pdvComTarefa)} PDVs com tarefa de compra</div></div>
+    <div class="kpi"><div class="k">% de conclusão</div><div class="v">${pct(ap, 1)}</div><div class="s">${fmt(tot.feitas)} de ${fmt(tot.base)} tarefas verificáveis</div></div>
+    <div class="kpi"><div class="k">Parciais</div><div class="v">${fmt(tot.parciais)}</div><div class="s">faturou o produto, falta quantidade · ${fmt(tot.nv)} não verificáveis fora</div></div>`;
+}
+
+function renderIndicadores(tot: Totais) {
+  const mx = Math.max(1, ...tot.basePorInd);
+  let h = '<div class="grp">Desenvolvimento de Portfólio</div>';
+  INDICADORES.forEach((ind, i) => {
+    if (ind === 'Marketplace') h += '<div class="grp">Marketplace e Volume</div>';
+    const fe = tot.feitasPorInd[i],
+      ab = tot.basePorInd[i];
+    h += `<div class="bar${EST.ind === ind ? ' sel' : ''}" data-ind="${ind}" role="button" tabindex="0" aria-pressed="${EST.ind === ind}">
+      <span class="nm">${NOME_CURTO[ind]}</span>
+      <span class="tr"><i style="width:${(ab / mx) * 100}%"></i><b style="width:${(fe / mx) * 100}%"></b></span>
+      <span class="n">${fmt(fe)} <small>/ ${fmt(ab)}</small></span></div>`;
+  });
+  $('ind').innerHTML = h;
+}
+
+function colunas(): { k: string; l: string; c?: string; ind?: Indicador }[] {
+  const t = TXT[F!.tipo];
+  return [
+    { k: 'setor', l: 'Setor', c: 'l fix' },
+    { k: 'rev', l: 'Revenda', c: 'l' },
+    { k: 'gv', l: 'GV' },
+    { k: 'nb', l: 'NB', c: 'l' },
+    { k: 'pdv', l: F!.tipo === 'dia' ? 'PDVs c/ pedido' : 'PDVs faturados' },
+    ...INDICADORES.map((i) => ({ k: 'i' + INDICADORES.indexOf(i), l: NOME_CURTO[i], ind: i })),
+    { k: 'feitas', l: t.colFeitas },
+    { k: 'parciais', l: 'Parciais' },
+    { k: 'ap', l: t.colAp },
+    { k: 'validadas', l: t.colVal },
+  ];
+}
+
+function valor(l: LinhaSetor, k: string): number | string {
+  switch (k) {
+    case 'setor':
+      return +l.s.setor;
+    case 'gv':
+      return +l.s.gv;
+    case 'rev':
+      return l.s.revenda;
+    case 'nb':
+      return l.s.nb;
+    case 'pdv':
+      return l.s.pdvComPedido;
+    case 'ap':
+      return l.aproveitamento ?? -1;
+    case 'feitas':
+    case 'parciais':
+    case 'validadas':
+      return l[k];
+    default:
+      return l.porInd[+k.slice(1)];
+  }
+}
+
+function renderTabela(res: ReturnType<typeof calcular>) {
+  const { k, d } = EST.ordem;
+  const linhas = [...res.linhas].sort((a, b) => {
+    const va = valor(a, k),
+      vb = valor(b, k);
+    const c = typeof va === 'string' ? va.localeCompare(String(vb)) : va - (vb as number);
+    return c * d || +a.s.setor - +b.s.setor;
+  });
+  const cols = colunas();
+  const mx = Math.max(1, ...linhas.flatMap((l) => l.porInd));
+  const dim = (ind?: Indicador) => (ind && EST.ind !== 'todos' && EST.ind !== ind ? ' dim' : '');
+  const heat = (n: number) =>
+    n ? `<span class="heat" style="background:color-mix(in srgb, var(--accent) ${Math.round(12 + (60 * n) / mx)}%, transparent)">${fmt(n)}</span>` : '·';
+  const nDP = INDICADORES.filter((i) => i.startsWith('DP')).length;
+
+  let h = `<thead><tr><th colspan="5" class="grp"></th><th colspan="${nDP}" class="grp">Desenvolvimento de Portfólio</th><th colspan="${cols.length - 5 - nDP}" class="grp"></th></tr><tr>`;
+  for (const c of cols) {
+    const on = k === c.k;
+    h += `<th class="${c.c ?? ''}${on ? ' sorted' : ''}${dim(c.ind)}" data-k="${c.k}" aria-sort="${on ? (d > 0 ? 'ascending' : 'descending') : 'none'}">${c.l}${on ? (d > 0 ? ' ↑' : ' ↓') : ''}</th>`;
+  }
+  h += '</tr></thead><tbody>';
+  if (!linhas.length) h += `<tr><td colspan="${cols.length}" class="l empty">Nenhum setor com esses filtros.</td></tr>`;
+  for (const l of linhas) {
+    const s = l.s;
+    h += `<tr class="row${EST.aberto === s.id ? ' open' : ''}" data-id="${s.id}" tabindex="0">
+      <td class="l fix"><b>${s.setor}</b></td><td class="l"><span class="rev">${esc(s.revenda)}</span></td><td>${s.gv}</td>
+      <td class="l"><span class="nb" title="${esc(s.nb)}">${esc(s.nb) || '—'}</span></td>
+      <td>${fmt(s.pdvComPedido)} <small class="muted">/ ${fmt(s.pdvComTarefa)}</small></td>
+      ${INDICADORES.map((ind, i) => `<td class="${l.porInd[i] ? 'hot' : 'z'}${dim(ind)}">${heat(l.porInd[i])}</td>`).join('')}
+      <td class="tot">${fmt(l.feitas)}</td><td>${l.parciais ? fmt(l.parciais) : '·'}</td>
+      <td>${l.aproveitamento == null ? '—' : `<span class="pct"><i><b style="width:${Math.min(100, l.aproveitamento * 100)}%"></b></i>${pct(l.aproveitamento)}</span>`}</td>
+      <td>${l.validadas ? fmt(l.validadas) : '·'}</td></tr>`;
+  }
+  const t = res.tot;
+  h += `<tr class="sum"><td class="l fix">Total</td><td colspan="3"></td><td>${fmt(t.pdvComPedido)} <small>/ ${fmt(t.pdvComTarefa)}</small></td>
+    ${t.feitasPorInd.map((n, i) => `<td class="${dim(INDICADORES[i]).trim()}">${n ? fmt(n) : '·'}</td>`).join('')}
+    <td class="tot">${fmt(t.feitas)}</td><td>${fmt(t.parciais)}</td><td>${pct(t.base ? t.feitas / t.base : null)}</td><td>${fmt(t.validadas)}</td></tr></tbody>`;
+  $('tbl').innerHTML = h;
+
+  const aberto = linhas.find((l) => l.s.id === EST.aberto);
+  $('drawer').innerHTML = aberto ? gaveta(aberto) : '';
+}
+
+function gaveta(l: LinhaSetor): string {
+  const f = F!,
+    s = l.s;
+  const nomes = STATUS_NOME[f.tipo];
+  const mes = f.tipo === 'mes';
+  let h = `<div class="drawer"><div class="top"><h3>Setor ${s.setor} · ${esc(s.revenda)}${s.nb ? ' · ' + esc(s.nb) : ''}</h3>
+    <div class="toolbar"><button class="btn small" data-acao="link" type="button">Copiar link do setor</button><button class="btn small" data-acao="fechar" type="button">Fechar</button></div></div>`;
+
+  const det = detalheDoSetor(s.id);
+  if (det === 'carregando') return h + '<div class="empty">Carregando os PDVs do setor…</div></div>';
+  if (det === 'erro') return h + '<div class="empty">Não foi possível carregar os PDVs deste setor. Tente de novo.</div></div>';
+
+  const filtroInd = EST.ind === 'todos' ? -1 : INDICADORES.indexOf(EST.ind);
+  const pdvs = det.pdvs
+    .map((p) => {
+      const tarefas = p.tarefas.filter((t) => filtroInd < 0 || t[1] === filtroInd);
+      const cont = (st: string) => tarefas.filter((t) => t[0] === st).length;
+      return { p, tarefas, feitas: cont('F') + (mes ? cont('V') : 0), parciais: cont('P') };
+    })
+    .filter((x) => x.tarefas.length)
+    .sort((a, b) => b.feitas - a.feitas || b.parciais - a.parciais);
+
+  h += `<div class="sub">${fmt(pdvs.length)} PDVs ${mes ? 'faturados' : 'com pedido'} e com tarefa · ${fmt(s.pdvComTarefa - s.pdvComPedido)} PDVs com tarefa ficaram sem ${
+    mes ? `faturamento em ${mesBr(f.chave)}` : `pedido em ${dataBr(f.dia)}`
+  }</div>`;
+  if (!pdvs.length) h += `<div class="empty">Nenhum PDV deste setor ${mes ? 'teve nota no mês' : 'fez pedido neste dia'}.</div>`;
+  pdvs.forEach(({ p, tarefas, feitas, parciais }, i) => {
+    h += `<details class="pdv"${i < 3 && feitas ? ' open' : ''}><summary><span class="nm">${esc(p.nome) || 'PDV'}</span>
+      <span class="cd">${p.pdv}${p.visita ? ' · visita ' + dataBr(p.visita) : ''}</span><span class="chips">
+      ${feitas ? `<span class="pill p-F">${feitas} ${mes ? 'concluídas' : 'feitas'}</span>` : ''}${parciais ? `<span class="pill p-P">${parciais} parciais</span>` : ''}
+      <span class="pill p-tot">${tarefas.length} tarefas</span></span></summary><div class="tl">`;
+    for (const [st, ind, md, txt, prog, itens] of tarefas) {
+      h += `<div class="trow"><div><span class="pill p-${st}">${nomes[st]}</span><div class="ix">${NOME_CURTO[INDICADORES[ind]]} · ${md === 'M' ? 'Mensal' : 'Diária'}</div></div>
+        <div class="tx">${esc(det.textos[txt])}${itens ? `<small>${esc(itens)}</small>` : ''}</div><div class="pg">${st === 'X' ? '' : esc(prog)}</div></div>`;
+    }
+    h += '</div></details>';
+  });
+  return h + '</div>';
+}
+
+function render() {
+  if (!F) return;
+  const res = calcular(F, EST);
+  renderCabecalho();
+  renderKpis(res.tot);
+  renderIndicadores(res.tot);
+  renderTabela(res);
+  gravarUrl();
+}
+
+// ---------- exportação ----------
+function tabelaTexto(sep: string): string {
+  const f = F!;
+  const res = calcular(f, EST);
+  const mes = f.tipo === 'mes';
+  const cab = [
+    mes ? 'Mês' : 'Dia',
+    'Revenda',
+    'GV',
+    'Setor',
+    'NB',
+    mes ? 'PDVs faturados' : 'PDVs c/ pedido',
+    'PDVs c/ tarefa',
+    ...INDICADORES,
+    mes ? 'Concluídas' : 'Feitas',
+    ...(mes ? ['Concluídas pelo faturado'] : []),
+    'Parciais',
+    mes ? '% Conclusão' : 'Aproveitamento',
+    mes ? 'Validadas BEES' : 'Já concluídas',
+  ];
+  const q = (v: unknown) => (sep === ';' && /[;"\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+  const linhas = res.linhas
+    .sort((a, b) => b.feitas - a.feitas)
+    .map((l) =>
+      [
+        mes ? mesBr(f.chave) : dataBr(f.dia),
+        l.s.revenda,
+        l.s.gv,
+        l.s.setor,
+        l.s.nb,
+        l.s.pdvComPedido,
+        l.s.pdvComTarefa,
+        ...l.porInd,
+        l.feitas,
+        ...(mes ? [l.feitasCalculo] : []),
+        l.parciais,
+        pct(l.aproveitamento, 1),
+        l.validadas,
+      ]
+        .map(q)
+        .join(sep),
+    );
+  return [cab.map(q).join(sep), ...linhas].join('\n');
+}
+
+// ---------- eventos ----------
+async function trocar(modo: TipoFechamento, chave: string) {
+  EST.modo = modo;
+  EST.chave = chave;
+  EST.aberto = null;
+  await carregar(modo, chave);
+  renderControles();
+  render();
+}
+
+function ligarEventos() {
+  $('segModo').addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
+    if (!b || b.disabled || b.dataset.modo === EST.modo) return;
+    const modo = b.dataset.modo as TipoFechamento;
+    const lista = modo === 'dia' ? INDICE!.dias : INDICE!.meses;
+    void trocar(modo, lista[0].chave);
+  });
+  $('selDia').addEventListener('change', (e) => void trocar(EST.modo, (e.target as HTMLSelectElement).value));
+  $('segRev').addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
+    if (!b) return;
+    EST.rev = b.dataset.rev!;
+    EST.aberto = null;
+    renderControles();
+    render();
+  });
+  $('selGv').addEventListener('change', (e) => {
+    EST.gv = (e.target as HTMLSelectElement).value;
+    EST.aberto = null;
+    render();
+  });
+  $('selInd').addEventListener('change', (e) => {
+    EST.ind = (e.target as HTMLSelectElement).value as Estado['ind'];
+    render();
+  });
+  $('busca').addEventListener('input', (e) => {
+    EST.busca = (e.target as HTMLInputElement).value;
+    render();
+  });
+  const alternarInd = (el: HTMLElement | null) => {
+    if (!el) return;
+    const ind = el.dataset.ind as Indicador;
+    EST.ind = EST.ind === ind ? 'todos' : ind;
+    $<HTMLSelectElement>('selInd').value = EST.ind;
+    render();
+  };
+  $('ind').addEventListener('click', (e) => alternarInd((e.target as HTMLElement).closest('.bar')));
+  $('ind').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      alternarInd((e.target as HTMLElement).closest('.bar'));
+    }
+  });
+  const abrirSetor = (tr: HTMLElement | null) => {
+    if (!tr) return;
+    EST.aberto = EST.aberto === tr.dataset.id ? null : tr.dataset.id!;
+    render();
+    if (EST.aberto) $('drawer').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  $('tbl').addEventListener('click', (e) => {
+    const th = (e.target as HTMLElement).closest<HTMLElement>('th[data-k]');
+    if (th) {
+      const k = th.dataset.k!;
+      const texto = ['setor', 'gv', 'rev', 'nb'].includes(k);
+      EST.ordem = EST.ordem.k === k ? { k, d: (EST.ordem.d * -1) as 1 | -1 } : { k, d: texto ? 1 : -1 };
+      render();
+      return;
+    }
+    abrirSetor((e.target as HTMLElement).closest('tr.row'));
+  });
+  $('tbl').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') abrirSetor((e.target as HTMLElement).closest('tr.row'));
+  });
+  $('drawer').addEventListener('click', (e) => {
+    const acao = (e.target as HTMLElement).closest<HTMLElement>('[data-acao]')?.dataset.acao;
+    if (acao === 'fechar') {
+      EST.aberto = null;
+      render();
+    } else if (acao === 'link') {
+      void copiar(location.href, 'Link do setor copiado. Envie para o RN.');
+    }
+  });
+  $('bCsv').addEventListener('click', () => baixar(`tasks-compra-${F!.tipo}-${F!.chave}.csv`, tabelaTexto(';')));
+  $('bCopy').addEventListener('click', () => void copiar(tabelaTexto('\t'), 'Tabela copiada. Cole no Excel.'));
+  $('bRules').addEventListener('click', () => {
+    const c = $('rulesCard');
+    c.hidden = !c.hidden;
+    if (!c.hidden) c.scrollIntoView({ behavior: 'smooth' });
+  });
+}
+
+// ---------- início ----------
+async function iniciar() {
+  try {
+    INDICE = await buscarJson<Indice>('data/index.json');
+    INDICE.dias ??= [];
+    INDICE.meses ??= [];
+    if (!INDICE.dias.length && !INDICE.meses.length) throw new Error('Nenhum fechamento publicado ainda.');
+    if (!listaDoModo().length) EST.modo = EST.modo === 'dia' ? 'mes' : 'dia';
+    if (!listaDoModo().some((d) => d.chave === EST.chave)) EST.chave = listaDoModo()[0].chave;
+    await carregar(EST.modo, EST.chave);
+    renderControles();
+    ligarEventos();
+    render();
+    if (EST.aberto) $('drawer').scrollIntoView({ block: 'start' });
+  } catch (e) {
+    const aviso = $('aviso');
+    aviso.hidden = false;
+    aviso.className = 'aviso erro';
+    aviso.textContent = `Não foi possível carregar o fechamento (${(e as Error).message}). Tente de novo em alguns minutos ou avise o analista responsável.`;
+    $('src').textContent = 'Sem dados';
+  }
+}
+void iniciar();

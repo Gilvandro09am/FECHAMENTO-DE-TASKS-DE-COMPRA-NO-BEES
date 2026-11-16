@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Tasks de Compra</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2318222e'/%3E%3Cpath d='M8 17l5 5 11-12' stroke='%23d08a12' stroke-width='4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    />
+  </head>
+  <body>
+    <header class="band">
+      <div class="wrap band-in">
+        <div class="titulo">
+          <div class="marcas">
+            <img src="./marca/pau-brasil.png" alt="Pau Brasil Distribuidora Ambev" class="logo-pb" width="360" height="278" />
+            <span class="marcas-div" aria-hidden="true"></span>
+            <img src="./marca/ambev.png" alt="Cervejaria Ambev" class="logo-ambev" width="480" height="241" />
+          </div>
+          <div>
+          <div class="eyebrow" id="ebrow">Pau Brasil</div>
+          <h1 id="h1">Tasks de compra</h1>
+          <div class="src" id="src">Carregando fechamento…</div>
+          </div>
+        </div>
+        <div class="toolbar">
+          <label class="sr" for="selDia" id="lblDia">Fechamento</label>
+          <select id="selDia" class="dark"></select>
+          <button class="btn ghost" id="bRules" type="button">Como é calculado</button>
+        </div>
+      </div>
+      <div class="wrap">
+        <div class="seg tabs" id="segModo" role="group" aria-label="Painel"></div>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <div class="controls" role="group" aria-label="Filtros">
+        <div class="ctl"><span class="lbl">Revenda</span><div class="seg" id="segRev"></div></div>
+        <div class="ctl"><label class="lbl" for="selGv">GV</label><select id="selGv"></select></div>
+        <div class="ctl"><label class="lbl" for="selInd">Indicador</label><select id="selInd"></select></div>
+        <div class="ctl grow"><label class="lbl" for="busca">Setor ou NB</label><input id="busca" type="search" placeholder="Ex.: 403 ou nome do NB" autocomplete="off" /></div>
+      </div>
+
+      <div id="aviso" class="aviso" hidden></div>
+      <div class="kpis" id="kpis"></div>
+
+      <section class="card">
+        <div class="hd"><h2>Por indicador</h2><p>Clique para filtrar a tabela</p></div>
+        <div class="ind" id="ind"></div>
+        <div class="legend">
+          <span><i class="lg-f"></i><span id="legF">Feitas no dia</span></span><span><i class="lg-o"></i><span id="legB">Abertas nos PDVs que compraram</span></span>
+        </div>
+      </section>
+
+      <section class="card" id="cardTabela">
+        <div class="hd">
+          <h2>Por setor</h2>
+          <div class="toolbar">
+            <button class="btn" id="bCsv" type="button">Baixar CSV</button>
+            <button class="btn" id="bCopy" type="button">Copiar tabela</button>
+          </div>
+        </div>
+        <div class="tblwrap"><table id="tbl"></table></div>
+        <div id="drawer"></div>
+      </section>
+
+      <section class="card" id="rulesCard" hidden>
+        <div class="hd"><h2>Como é calculado</h2><p>Regras aplicadas a cada tarefa</p></div>
+        <div class="rules">
+          <p>
+            Tarefas do BEES Force em escopo: Desenvolvimento de Portfólio (Cerveja, LN, LN High End, NAB, Match, SKU PDV,
+            Marketplace, Outras), Marketplace e Volume. Os produtos do pedido ou da nota são reconhecidos pela cesta de
+            produtos (pelo código) e pelo nome do item.
+          </p>
+          <dl>
+            <dt>SKU PDV</dt>
+            <dd>Só as tarefas "N SKUs distintos de CERVEJA / NAB / MARKETPLACE / MATCH".</dd>
+            <dt>LN</dt>
+            <dd>Tarefas de Portfólio com "Long Neck" ou "LN" no texto.</dd>
+            <dt>LN High End</dt>
+            <dd>Tarefas de long neck de Corona (Extra e Cero), Michelob, Stella e Stella Pure Gold, ou do grupo HE/Premium.</dd>
+          </dl>
+          <h3>Vespertina · pedidos do dia</h3>
+          <dl>
+            <dt>Pedidos que contam</dt>
+            <dd>Venda, bonificação e itens de resgate digitados no dia. Trocas, cancelados e rejeitados ficam de fora.</dd>
+            <dt>Tarefa diária</dt>
+            <dd>Só entra se a visita for no dia do fechamento e fecha só com o pedido do dia.</dd>
+            <dt>Tarefa mensal</dt>
+            <dd>Soma o que o PDV já tinha faturado no mês com o pedido do dia. "Feita no dia" = o pedido de hoje fechou a tarefa.</dd>
+            <dt>Já concluída</dt>
+            <dd>Validada no BEES, ou o faturado do mês já cobria a meta antes do pedido de hoje.</dd>
+            <dt>Aproveitamento</dt>
+            <dd>Feitas no dia ÷ tarefas abertas nos PDVs que fizeram pedido.</dd>
+          </dl>
+          <h3>Mês · faturado</h3>
+          <dl>
+            <dt>Notas que contam</dt>
+            <dd>Notas de venda (operação 1) e bonificação (operação 2) com data de entrega no mês. Devolvidas e canceladas não contam; operações 5, 9, 108 e outras também não.</dd>
+            <dt>Concluída</dt>
+            <dd>Validada no BEES, ou o faturado do mês já atinge a meta da tarefa (aguardando a validação oficial).</dd>
+            <dt>Tarefa diária</dt>
+            <dd>Vale qualquer nota com entrega no mês, como o BEES valida.</dd>
+            <dt>% de conclusão</dt>
+            <dd>Concluídas ÷ todas as tarefas verificáveis do setor (com ou sem faturamento).</dd>
+          </dl>
+          <h3>Para os dois</h3>
+          <dl>
+            <dt>Caixas / SKUs / reais</dt>
+            <dd>Caixas do produto, produtos diferentes do grupo ou valor líquido ≥ meta da tarefa. CERVEJA não inclui Match.</dd>
+            <dt>"Qualquer…"</dt>
+            <dd>Cobertura de CERVEJA, NAB, MATCH ou MARKETPLACE, "qualquer SKU de" uma indústria e "qualquer produto": vale qualquer item da cesta ou do fornecedor citado.</dd>
+            <dt>Equivalências</dt>
+            <dd>Confirmadas nas tarefas validadas pelo BEES: lata 350 aceita multipack; Guaraná normal aceita Zero/Diet; Inteira = garrafa 600 ml (retornável ou one way); long neck inclui one way pequena (ex.: Budweiser OW 330).</dd>
+            <dt>Parcial</dt>
+            <dd>O PDV comprou o produto, mas ainda não o suficiente para fechar a tarefa.</dd>
+            <dt>Não verificável</dt>
+            <dd>[PROATIVA], [VALE MAIS PONTOS] e textos sem regra dependem de informação que não vem nos arquivos e ficam fora da conta.</dd>
+          </dl>
+        </div>
+      </section>
+
+      <footer class="foot" id="foot"></footer>
+    </main>
+    <script type="module" src="/src/app/main.ts"></script>
+  </body>
+</html>

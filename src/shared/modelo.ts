@@ -1,0 +1,125 @@
+/**
+ * Formato dos arquivos publicados em public/data — o contrato entre a rotina de
+ * fechamento (que grava) e o painel (que lê). Mudou o formato? Suba VERSAO_MODELO.
+ */
+export const VERSAO_MODELO = 3;
+
+/** dia = vespertina (pedidos digitados no dia); mes = tarefas concluídas pelo faturado do mês. */
+export type TipoFechamento = 'dia' | 'mes';
+
+export const INDICADORES = [
+  'DP · Cerveja',
+  'DP · LN',
+  'DP · LN High End',
+  'DP · NAB',
+  'DP · Match',
+  'DP · SKU PDV',
+  'DP · Marketplace',
+  'DP · Outras',
+  'Marketplace',
+  'Volume',
+] as const;
+export type Indicador = (typeof INDICADORES)[number];
+
+export const NOME_CURTO: Record<Indicador, string> = {
+  'DP · Cerveja': 'Cerveja',
+  'DP · LN': 'LN',
+  'DP · LN High End': 'LN HE',
+  'DP · NAB': 'NAB',
+  'DP · Match': 'Match',
+  'DP · SKU PDV': 'SKU PDV',
+  'DP · Marketplace': 'Mktplace',
+  'DP · Outras': 'Outras',
+  Marketplace: 'Marketplace',
+  Volume: 'Volume',
+};
+
+/**
+ * Contagens por indicador: [feitas, parciais, abertas, já validadas, não verificáveis].
+ * No dia, "abertas" = tarefas abertas nos PDVs que fizeram pedido.
+ * No mês, "abertas" = todas as tarefas não validadas do setor (com ou sem faturamento).
+ */
+export type Contagem = [number, number, number, number, number];
+export const C_FEITAS = 0,
+  C_PARCIAIS = 1,
+  C_ABERTAS = 2,
+  C_VALIDADAS = 3,
+  C_NV = 4;
+
+export interface SetorFechamento {
+  /** "unb|setor" */
+  id: string;
+  revenda: string;
+  unb: string;
+  gv: string;
+  setor: string;
+  /** Nome do NB/RN que mais vendeu no setor no dia. */
+  nb: string;
+  pdvComTarefa: number;
+  pdvComPedido: number;
+  /** Uma Contagem por indicador, na ordem de INDICADORES. */
+  ind: Contagem[];
+}
+
+/** Status das tarefas no detalhe: F feita, P parcial, N não feita, V já validada, X não verificável. */
+export type CodStatus = 'F' | 'P' | 'N' | 'V' | 'X';
+export const STATUS_NOME: Record<TipoFechamento, Record<CodStatus, string>> = {
+  dia: { F: 'Feita no dia', P: 'Parcial', N: 'Não feita', V: 'Já validada', X: 'Não verificável' },
+  mes: { F: 'Concluída (faturado)', P: 'Parcial', N: 'Não feita', V: 'Validada BEES', X: 'Não verificável' },
+};
+
+/** [status, índice do indicador, 'M'|'D', índice do texto em `textos`, progresso, itens que bateram] */
+export type TarefaDetalhe = [CodStatus, number, 'M' | 'D', number, string, string];
+
+export interface PdvFechamento {
+  setorId: string;
+  pdv: string;
+  nome: string;
+  visita: string;
+  tarefas: TarefaDetalhe[];
+}
+
+export interface Fechamento {
+  versao: number;
+  tipo: TipoFechamento;
+  /** Chave do fechamento: AAAA-MM-DD (dia) ou AAAA-MM (mês). */
+  chave: string;
+  /** Dia dos pedidos (dia) ou último dia de faturamento considerado (mês), AAAA-MM-DD. */
+  dia: string;
+  geradoEm: string;
+  arquivos: { pedidos: string; tarefas: string[]; cesta: string };
+  config: { incluirBloqueados: boolean };
+  resumo: { tarefasNoEscopo: number; itensPedido: number; pedidos: number };
+  setores: SetorFechamento[];
+  /**
+   * Detalhe por PDV. Quando `detalhePorSetor` é true, vem vazio aqui e cada setor tem seu arquivo
+   * em data/<pasta>/<chave>/<unb>-<setor>.json (DetalheSetor), carregado só quando alguém abre o setor.
+   */
+  pdvs: PdvFechamento[];
+  textos: string[];
+  detalhePorSetor?: boolean;
+}
+
+export interface DetalheSetor {
+  pdvs: PdvFechamento[];
+  textos: string[];
+}
+
+/** Nome do arquivo de detalhe de um setor ("747530|403" → "747530-403"). */
+export const arquivoSetor = (setorId: string) => setorId.replace('|', '-');
+
+export interface IndiceDia {
+  /** AAAA-MM-DD (dia) ou AAAA-MM (mês). */
+  chave: string;
+  /** Data dos pedidos / último faturamento. */
+  dia: string;
+  geradoEm: string;
+  feitas: number;
+  pdvComPedido: number;
+}
+export interface Indice {
+  versao: number;
+  atualizadoEm: string;
+  dias: IndiceDia[];
+  meses: IndiceDia[];
+}

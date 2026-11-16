@@ -1,0 +1,9 @@
+# Cabeçalhos do Cloudflare Pages
+/*
+  X-Robots-Tag: noindex, nofollow
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: same-origin
+  X-Frame-Options: DENY
+
+/data/*
+  Cache-Control: no-cache

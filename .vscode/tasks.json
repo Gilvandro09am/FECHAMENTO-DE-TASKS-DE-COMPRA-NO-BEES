@@ -1,0 +1,35 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "1. Fechamento (vespertina + mês)",
+      "detail": "Lê os arquivos da pasta entrada/ e gera a vespertina do dia e o painel do mês",
+      "type": "npm",
+      "script": "fechamento",
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "2. Ver painel no meu computador",
+      "detail": "Abre o painel em http://localhost:5173",
+      "type": "npm",
+      "script": "dev",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "3. Publicar para RNs e GVs",
+      "detail": "Gera a versão final e envia para o Cloudflare Pages",
+      "type": "npm",
+      "script": "publicar",
+      "problemMatcher": []
+    },
+    {
+      "label": "Verificar (tipos + testes)",
+      "type": "npm",
+      "script": "verificar",
+      "problemMatcher": ["$tsc"],
+      "group": "test"
+    }
+  ]
+}

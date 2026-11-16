@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.wrangler/
+# arquivos brutos do dia (têm dados de clientes) não vão para o Git
+entrada/*
+!entrada/LEIA-ME.md
+*.log
+.DS_Store
+tests/referencia/
+
+# O repositório é público: nada com dados de clientes ou da operação vai para o Git.
+# Fechamentos calculados (têm nome e código de PDV) e a cesta em cache.
+public/data/
+base/
+nul
