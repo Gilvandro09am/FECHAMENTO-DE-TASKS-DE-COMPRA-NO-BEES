@@ -8,8 +8,7 @@ entrada/*
 .DS_Store
 tests/referencia/
 
-# O repositório é público: nada com dados de clientes ou da operação vai para o Git.
-# Fechamentos calculados (têm nome e código de PDV) e a cesta em cache.
-public/data/
+# Os arquivos brutos e a cesta em cache não vão para o Git.
+# Os fechamentos calculados (public/data) vão: o Vercel publica o site a partir do GitHub.
 base/
 nul

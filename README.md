@@ -7,8 +7,9 @@ Estiva e Caculé** fez, em dois painéis:
 - **Vespertina · pedidos do dia** — o fechamento da tarde: quais tarefas os pedidos digitados hoje fecharam.
 - **Mês · faturado** — tarefas concluídas no mês: validadas no BEES + as que o faturado/entregue já cobre.
 
-O analista roda o fechamento no VS Code e publica. RNs e GVs abrem um link, fazem login com o e-mail e veem
-o resultado, com histórico dos fechamentos anteriores.
+O analista roda o fechamento no VS Code e publica. RNs e GVs abrem o link
+<https://fechamento-de-tasks-de-compra-no-be.vercel.app> (acesso livre, sem senha) e veem o resultado, com
+histórico dos fechamentos anteriores.
 
 ```
  entrada/  pedidos do dia (Cora) · faturados do mês (Promax) · tarefas BEES (1 por revenda) · cesta
@@ -16,9 +17,9 @@ o resultado, com histórico dos fechamentos anteriores.
         ▼
  public/data/dias/AAAA-MM-DD.json   + um arquivo por setor (detalhe dos PDVs)
  public/data/meses/AAAA-MM.json     + um arquivo por setor
-        │  npm run publicar
+        │  npm run publicar   (commit + push para o GitHub)
         ▼
- Cloudflare Pages + Cloudflare Access  →  RNs e GVs (login por e-mail)
+ GitHub  →  Vercel (atualiza o site sozinho a cada push)  →  RNs e GVs
 ```
 
 ## Ferramentas
@@ -27,11 +28,10 @@ o resultado, com histórico dos fechamentos anteriores.
 | --- | --- | --- |
 | [VS Code](https://code.visualstudio.com/) | Editar, rodar o fechamento pelo menu de tarefas | Grátis |
 | [Node.js 22 LTS](https://nodejs.org/) | Executa o fechamento e gera o site | Grátis |
-| [Git](https://git-scm.com/) + GitHub (repositório privado) | Histórico das mudanças nas regras | Grátis |
+| [Git](https://git-scm.com/) + [GitHub](https://github.com/Gilvandro09am/FECHAMENTO-DE-TASKS-DE-COMPRA-NO-BEES) | Histórico do código e dos fechamentos | Grátis |
 | TypeScript + Vite + Vitest | Linguagem, empacotador do site e testes | Grátis (já vêm no `npm install`) |
 | SheetJS (`xlsx`) | Lê o .csv de pedidos e os .xlsx de tarefas e cesta | Grátis |
-| [Cloudflare Pages](https://pages.cloudflare.com/) | Hospeda o painel (link fixo, HTTPS) | Grátis |
-| [Cloudflare Access](https://www.cloudflare.com/zero-trust/products/access/) | Login por e-mail: só quem está na lista entra | Grátis até 50 usuários |
+| [Vercel](https://vercel.com/) | Hospeda o painel (link fixo, HTTPS) e publica a cada push no GitHub | Grátis |
 
 ## Instalação (uma vez)
 
@@ -44,33 +44,21 @@ o resultado, com histórico dos fechamentos anteriores.
    npm run verificar
    ```
    O segundo comando confere os tipos e roda os testes. Tem que terminar com tudo verde.
-5. Crie o repositório Git (guarda o histórico das regras):
+5. Para trabalhar num computador novo, baixe o projeto do GitHub em vez de descompactar:
    ```bash
-   git init
-   git add .
-   git commit -m "Primeira versão do painel"
+   git clone https://github.com/Gilvandro09am/FECHAMENTO-DE-TASKS-DE-COMPRA-NO-BEES.git
    ```
-   Opcional: publique num repositório **privado** no GitHub (botão "Publish to GitHub" do VS Code).
 
-## Publicação na internet (uma vez)
+## Publicação na internet
 
-1. Crie uma conta grátis em <https://dash.cloudflare.com/sign-up>.
-2. No terminal do VS Code:
-   ```bash
-   npx wrangler login
-   npx wrangler pages project create painel-tasks-compra --production-branch main
-   npm run publicar
-   ```
-   No fim aparece o link, algo como `https://painel-tasks-compra.pages.dev`.
-3. Feche o acesso com login (Cloudflare Access):
-   - No painel da Cloudflare: **Zero Trust** (escolha o plano Free) → **Access → Applications → Add an application → Self-hosted**.
-   - Domínio: `painel-tasks-compra.pages.dev` (e também `*.painel-tasks-compra.pages.dev`, que cobre as prévias).
-   - Política **Allow** com **Emails**: os e-mails dos RNs, GVs e analistas. Ou **Emails ending in** `@suaempresa.com.br`.
-   - Método de login: **One-time PIN** (a pessoa recebe um código no e-mail; não precisa criar senha).
-4. Teste numa aba anônima: o site deve pedir o e-mail antes de mostrar qualquer número.
+O site fica no Vercel, ligado ao repositório do GitHub: **todo push no `main` publica o site sozinho** em 1–2
+minutos. Configuração do projeto no Vercel (já feita): framework Vite, build `npm run build`, saída `dist`
+(está em `vercel.json`).
 
-> Os arquivos brutos (pedidos, tarefas, cesta) **nunca** vão para o site nem para o Git. Só o resultado
-> calculado em `public/data` é publicado.
+> **Atenção: o acesso é livre e o repositório é público.** Qualquer pessoa com o link vê os fechamentos,
+> incluindo nome e código dos PDVs (`public/data`). Os arquivos brutos (pedidos, faturado, tarefas, cesta)
+> continuam fora do Git e do site: a pasta `entrada/` e a `base/` são ignoradas, e o `npm run publicar` se
+> recusa a enviar qualquer `.csv` ou `.xlsx`.
 
 ## Rotina do fechamento (todo dia)
 
@@ -81,7 +69,7 @@ Pelo menu **Terminal → Executar Tarefa…** do VS Code (ou `Ctrl+Shift+B` para
 | 1. Copie os exports para a pasta `entrada/` (veja `entrada/LEIA-ME.md`) | — | — |
 | 2. Gere o fechamento | **1. Fechamento (vespertina + mês)** | `npm run fechamento` |
 | 3. Confira no seu computador | **2. Ver painel no meu computador** | `npm run dev` → <http://localhost:5173> |
-| 4. Publique | **3. Publicar para RNs e GVs** | `npm run publicar` |
+| 4. Publique | **3. Publicar no site** | `npm run publicar` |
 
 O fechamento usa o dia mais recente do arquivo de pedidos e o mês mais recente do faturado. Leva cerca de
 1 minuto (o faturado tem centenas de MB). Opções:
@@ -108,7 +96,7 @@ A cesta só precisa ir para `entrada/` quando mudar: a última usada fica guarda
 
 ## Como RNs e GVs usam
 
-- Abrem o link e entram com o e-mail (código de acesso chega na caixa de entrada).
+- Abrem o link do site (não precisa de login).
 - Escolhem o painel (Vespertina ou Mês), o fechamento, a revenda, o GV, o indicador ou buscam pelo setor/nome do NB.
 - Clicam no setor para ver cada PDV que comprou, as tarefas feitas, parciais e não feitas, e os itens do pedido
   que fecharam cada uma.

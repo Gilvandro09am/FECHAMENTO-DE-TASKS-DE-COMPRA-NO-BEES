@@ -18,8 +18,8 @@
       "problemMatcher": []
     },
     {
-      "label": "3. Publicar para RNs e GVs",
-      "detail": "Gera a versão final e envia para o Cloudflare Pages",
+      "label": "3. Publicar no site",
+      "detail": "Envia o fechamento para o GitHub; o site no Vercel atualiza sozinho",
       "type": "npm",
       "script": "publicar",
       "problemMatcher": []

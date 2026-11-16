@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "verificar": "tsc --noEmit && vitest run",
-    "publicar": "npm run build && wrangler pages deploy dist --project-name painel-tasks-compra --branch main"
+    "publicar": "tsx src/pipeline/publicar.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
