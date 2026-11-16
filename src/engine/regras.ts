@@ -55,11 +55,14 @@ export const MARCAS: [string, RegExp, RegExp | null][] = [
   ['SPATEN', /^SPATEN\b/, null],
   ['MICHELOB ULTRA', /^MICHELOB ULTRA/, null],
   ['ANTARCTICA PILSEN', /^ANTARCTICA PILSEN/, null],
+  ['CARACU', /^CARACU\b/, null],
   // No cadastro, o Guaraná Zero aparece como "GUARANA CHP ANTARCTICA DIET".
   ['GUARANA ANTARCTICA ZERO', /^GUARANA (CHP )?ANTARCTICA (ZERO|DIET)/, null],
   // O BEES valida a tarefa do Guaraná normal também com o Zero/Diet do mesmo tamanho (o contrário não).
   ['GUARANA ANTARCTICA', /^GUARANA (CHP )?ANTARCTICA/, null],
   ['SODA ZERO', /^SODA LIMONADA ANTARCTICA (ZERO|DIET)/, null],
+  ['SODA ANTARCTICA ZERO', /^SODA LIMONADA ANTARCTICA (ZERO|DIET)/, null],
+  ['SODA ANTARCTICA', /^SODA LIMONADA ANTARCTICA/, /ZERO|DIET/],
   ['SODA', /^SODA LIMONADA ANTARCTICA/, /ZERO|DIET/],
   // Pepsi Black = Pepsi Zero no cadastro.
   ['PEPSI BLACK', /^PEPSI (BLACK|ZERO)/, null],
@@ -106,7 +109,8 @@ export const EMBALAGENS: [string, (d: string) => boolean][] = [
   ['LONG NECK', ehLN],
   ['PET 2.5L', (d) => /PET/.test(d) && /\b2[,.]5 ?L/.test(d)],
   ['PET 1.5L', (d) => /PET/.test(d) && /\b1[,.]5 ?L?\b/.test(d)],
-  ['PET 2L',(d) => /PET/.test(d) && /\b2 ?L\b/.test(d) && !/2[,.]5/.test(d)],
+  ['PET 2L', (d) => /PET/.test(d) && /\b2 ?L\b/.test(d) && !/2[,.]5/.test(d)],
+  ['2L', (d) => /PET/.test(d) && /\b2 ?L\b/.test(d) && !/2[,.]5/.test(d)],
   ['PET 1L', (d) => /PET/.test(d) && /\b1 ?L\b/.test(d) && !/1[,.]5/.test(d)],
   ['PET 200ML', (d) => /PET/.test(d) && /\b200 ?ML/.test(d)],
   ['PET 500ML', (d) => /PET/.test(d) && /\b500 ?ML/.test(d)],
@@ -210,13 +214,19 @@ export function interpretarTarefa(texto: string): Regra {
   const semTags = bruto.replace(/^(\[[^\]]*\]\s*)+/, '');
   const t = semTags
     .replace(/^[A-Z ]+: (?=AUXILIE)/, '')
-    .replace(/ PARA EVITAR PERDA DE DISTRIBUICAO\.?$/, '');
+    .replace(/ PARA EVITAR PERDA DE DISTRIBUICAO\.?$/, '')
+    // "[ZÉ] ... cobertura de ORIGINAL LT 473ML ... do portfólio ideal." → só o produto.
+    .replace(/ DO PORTFOLIO IDEAL\.?$/, '');
   let m: RegExpMatchArray | null;
 
   if (/\bPROATIVA\b|VALE MAIS PONTOS/.test(bruto))
     return { tipo: 'nv', alvo: 'Depende de histórico (sem compra há 2 meses / outras tarefas)' };
 
   if (/QUALQUER PRODUTO/.test(t)) return { tipo: 'any', alvo: 'Qualquer produto', fn: () => true };
+  // "Auxilie na cobertura de qualquer SKU. PDV não comprador." → qualquer compra (sem grupo citado).
+  // Tarefas de fornecedor 3P ("[3P] [AURORA] … comprar qualquer SKU") não entram: são só daquele fornecedor.
+  if (/COBERTURA DE QUALQUER (SKU|ITEM)S?(\.|$)/.test(t) && !/\[3P\]/.test(bruto))
+    return { tipo: 'any', alvo: 'Qualquer produto', fn: () => true };
 
   // "1 cx de RED BULL SABORES (SUGAR FREE, TROPICAL, ...)" → caixas de qualquer Red Bull.
   if ((m = t.match(/(\d+) CX DE RED BULL/))) return { tipo: 'qty', n: +m[1], alvo: 'RED BULL', fn: (p) => /^RED BULL/.test(p.d) };
@@ -311,7 +321,7 @@ export function interpretarTarefa(texto: string): Regra {
     // A tarefa traz o nome exato do produto ("STELLA ARTOIS PURE GOLD LONG NECK 330ML SP SH C/4"):
     // compara direto com a descrição do produto na cesta/pedido.
     const nome = m[1].replace(/^\d+ CAIXAS? DE /, '').replace(/\.$/, '');
-    if (/\d+ ?ML\b/.test(nome) && nome.split(' ').length >= 4) {
+    if (/\d+ ?(ML|L)\b/.test(nome) && nome.split(' ').length >= 4) {
       const produto = (p: { d: string }) => p.d === nome || p.d.startsWith(nome + ' ') || p.d.replace(/\s*\.$/, '') === nome;
       const n = Number(m[1].match(/^(\d+) CAIXAS? DE /)?.[1] ?? 0);
       return n ? { tipo: 'qty', n, alvo: nome, fn: produto } : { tipo: 'any', alvo: nome, fn: produto };

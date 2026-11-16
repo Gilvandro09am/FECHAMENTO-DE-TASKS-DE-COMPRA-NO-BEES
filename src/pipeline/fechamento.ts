@@ -21,6 +21,7 @@ import {
   COLUNAS_PEDIDOS,
   COLUNAS_TAREFAS,
   indicador,
+  interpretarTarefa,
   itemConta,
   itemContaMes,
   lerCesta,
@@ -75,6 +76,7 @@ function argumentos() {
     incluirBloqueados: a.includes('--sem-bloqueados') ? false : CONFIG.incluirBloqueados,
     fazerDia: !a.includes('--so-mes'),
     fazerMes: !a.includes('--so-dia'),
+    diagnostico: a.includes('--diagnostico'),
   };
 }
 
@@ -159,7 +161,7 @@ function separarDetalhe(f: Fechamento, dirDetalhe: string): Fechamento {
       return n;
     };
     const det: DetalheSetor = {
-      pdvs: pdvs.map((p) => ({ ...p, tarefas: p.tarefas.map((t) => [t[0], t[1], t[2], idx(t[3]), t[4], t[5]] as typeof t) })),
+      pdvs: pdvs.map((p) => ({ ...p, tarefas: p.tarefas.map((t) => [t[0], t[1], t[2], idx(t[3]), t[4], t[5], t[6]] as typeof t) })),
       textos,
     };
     fs.writeFileSync(path.join(dirDetalhe, `${arquivoSetor(setorId)}.json`), JSON.stringify(det));
@@ -318,7 +320,7 @@ function fechamentoMes(
   );
 
   const resultados = avaliarMes(tarefas, itens, { mes });
-  aferirComBees(tarefas, itens, mes);
+  aferirComBees(tarefas, itens, mes, process.argv.includes("--diagnostico"));
   const f = montarFechamento(resultados, {
     tipo: 'mes',
     chave: mes,
@@ -337,7 +339,7 @@ function fechamentoMes(
  * Aferição: as tarefas que o BEES já validou são o gabarito. Avalia essas tarefas como se estivessem abertas
  * e mostra quantas o motor também reconhece pelo faturado. Indicador abaixo de ~95% = regra a revisar.
  */
-function aferirComBees(tarefas: Tarefa[], itens: ItemPedido[], mes: string) {
+function aferirComBees(tarefas: Tarefa[], itens: ItemPedido[], mes: string, diagnostico = false) {
   const gabarito = tarefas.filter((t) => t.status === 'VALID').map((t) => ({ ...t, status: 'OPEN' }));
   if (!gabarito.length) return;
   const r = avaliarMes(gabarito, itens, { mes }).filter((x) => x.regra.tipo !== 'nv' && x.regra.fn);
@@ -362,6 +364,44 @@ function aferirComBees(tarefas: Tarefa[], itens: ItemPedido[], mes: string) {
   });
   console.log(`    ${linha.join(' · ')}`);
   if (geral < 0.95) console.log(cor.aviso('  ! Abaixo de 95%: veja os textos de tarefa novos e ajuste src/engine/regras.ts.'));
+  if (diagnostico) gravarDiagnostico(r, itens, mes);
+  else if (linha.some((l) => l.includes('\x1b'))) console.log('    Para ver as tarefas que faltam: npm run fechamento -- --so-mes --diagnostico');
+}
+
+/**
+ * Lista as tarefas que o BEES validou e o motor não reconhece, com o que o PDV comprou no mês.
+ * Serve para achar nomenclatura nova e ajustar src/engine/regras.ts. Fica em base/ (fora do Git: tem dados de clientes).
+ */
+function gravarDiagnostico(r: ReturnType<typeof avaliarMes>, itens: ItemPedido[], mes: string) {
+  const compras = new Map<string, Set<string>>();
+  for (const o of itens) {
+    if (!itemContaMes(o, { mes })) continue;
+    const k = `${o.unb}|${o.pdv}`;
+    if (!compras.has(k)) compras.set(k, new Set());
+    compras.get(k)!.add(o.d);
+  }
+  const falhas = new Map<string, { ind: string; texto: string; pdvs: string[] }>();
+  for (const x of r) {
+    if (x.status === 'Feita no dia') continue;
+    const k = `${x.ind}|${x.task.texto}`;
+    const g = falhas.get(k) ?? { ind: x.ind, texto: x.task.texto, pdvs: [] };
+    g.pdvs.push(`${x.task.unb}|${x.task.pdv}`);
+    falhas.set(k, g);
+  }
+  const linhas: string[] = [`Diagnóstico da aferição — ${mes} — gerado em ${new Date().toLocaleString('pt-BR')}`, ''];
+  const grupos = [...falhas.values()].sort((a, b) => a.ind.localeCompare(b.ind) || b.pdvs.length - a.pdvs.length);
+  for (const g of grupos) {
+    const regra = interpretarTarefa(g.texto);
+    linhas.push(`[${g.ind}] ${g.pdvs.length}× ${g.texto}`, `    regra: ${regra.tipo} · alvo "${regra.alvo}"`);
+    for (const pdv of g.pdvs.slice(0, 3)) {
+      const c = [...(compras.get(pdv) ?? [])].sort();
+      linhas.push(`    PDV ${pdv}: ${c.length ? c.slice(0, 25).join(' · ') : '(sem nota no mês)'}`);
+    }
+    linhas.push('');
+  }
+  const arq = path.join(CONFIG.pastaBase, 'diagnostico-afericao.txt');
+  fs.writeFileSync(arq, linhas.join('\n'));
+  console.log(`    Diagnóstico gravado em ${arq} (${fmt(grupos.length)} textos).`);
 }
 
 async function main() {
@@ -396,7 +436,7 @@ async function main() {
   let itensMes: ItemPedido[] = [];
   if (arqFaturados) {
     console.log(`  Faturados ${path.basename(arqFaturados)}  (lendo…)`);
-    const linhas = await lerCsvGrande(arqFaturados, [...COLUNAS_FATURADOS, 'Nome', 'Nr. Pedido', 'Origem do Pedido']);
+    const linhas = await lerCsvGrande(arqFaturados, [...COLUNAS_FATURADOS, 'Nome', 'Nr. Pedido', 'Origem do Pedido', 'Nota']);
     const falta = colunasFaltando(linhas[0], COLUNAS_FATURADOS);
     if (falta.length) throw new ErroFechamento(`No arquivo de faturados faltam as colunas: ${falta.join(', ')}.`);
     itensMes = lerFaturados(linhas, cesta, { filialUnb: FILIAL_UNB, status: CONFIG.statusFaturado, operacoes: CONFIG.operacoesVenda });

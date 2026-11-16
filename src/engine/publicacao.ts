@@ -10,6 +10,7 @@ import {
   type CodStatus,
   type Contagem,
   type Fechamento,
+  type ItemProva,
   type PdvFechamento,
   type SetorFechamento,
   type TipoFechamento,
@@ -83,7 +84,7 @@ export interface OpcoesFechamento {
 export function montarFechamento(resultados: Resultado[], o: OpcoesFechamento): Fechamento {
   const mes = o.tipo === 'mes';
   const setores = new Map<string, SetorFechamento & { _pt: Set<string>; _pc: Set<string> }>();
-  const pdvs = new Map<string, PdvFechamento>();
+  const pdvs = new Map<string, PdvFechamento & { _idx: Map<string, number>; _linhas: Map<string, Set<ItemPedido>>; _rn: Record<string, number> }>();
   const textos: string[] = [];
   const idxTexto = new Map<string, number>();
   const texto = (s: string) => {
@@ -136,23 +137,64 @@ export function montarFechamento(resultados: Resultado[], o: OpcoesFechamento): 
     const pk = `${id}|${t.pdv}`;
     let p = pdvs.get(pk);
     if (!p) {
-      p = { setorId: id, pdv: t.pdv, nome: o.cadastro.nomePdv[`${t.unb}|${t.pdv}`] ?? '', visita: t.visita, tarefas: [] };
+      p = {
+        setorId: id,
+        pdv: t.pdv,
+        nome: o.cadastro.nomePdv[`${t.unb}|${t.pdv}`] ?? '',
+        visita: t.visita,
+        rn: '',
+        tarefas: [],
+        itens: [],
+        _idx: new Map(),
+        _linhas: new Map(),
+        _rn: {},
+      };
       pdvs.set(pk, p);
     }
-    const itensTxt = [...new Set(r.itens.map((x) => x.d))].slice(0, 8).join(' · ');
+    // Comprovação: cada compra que bateu com a tarefa (do dia e, no acumulado, as notas anteriores).
+    const provas = new Set<number>();
+    for (const x of [...(r.itensAntes ?? []), ...r.itens]) {
+      const nota = x.dataFat !== undefined;
+      const data = nota ? (x.dataFat ?? '') : x.dataEntrada;
+      const k = [x.cod || x.d, x.pedido, x.nota ?? '', data, x.tipoItem].join('|');
+      let i = p._idx.get(k);
+      if (i === undefined) {
+        i = p.itens.length;
+        p.itens.push([x.cod, x.d, 0, 0, x.pedido, x.nota ?? '', data, x.vendedor, nota ? 'F' : 'P'] as ItemProva);
+        p._idx.set(k, i);
+        p._linhas.set(k, new Set());
+      }
+      // A mesma linha pode bater em várias tarefas: soma só uma vez.
+      const vistas = p._linhas.get(k)!;
+      if (!vistas.has(x)) {
+        vistas.add(x);
+        p.itens[i][2] += x.qty;
+        p.itens[i][3] += x.valor;
+        if (x.vendedor) p._rn[x.vendedor] = (p._rn[x.vendedor] ?? 0) + 1;
+      }
+      provas.add(i);
+    }
     p.tarefas.push([
       cs,
       INDICADORES.indexOf(r.ind),
       t.tipoMD === 'Mensal' ? 'M' : 'D',
       texto(t.texto),
       cs === 'X' ? r.regra.alvo : cs === 'V' && !r.antes ? '' : textoProgresso(r),
-      itensTxt,
+      [...provas],
+      cs === 'V' ? (t.conclusao ?? '') : '',
     ]);
   }
 
   const ordem: Record<CodStatus, number> = { F: 0, P: 1, N: 2, V: 3, X: 4 };
-  const listaPdvs = [...pdvs.values()];
-  for (const p of listaPdvs) p.tarefas.sort((a, b) => ordem[a[0]] - ordem[b[0]]);
+  const listaPdvs: PdvFechamento[] = [...pdvs.values()].map(({ _idx, _linhas, _rn, ...p }) => {
+    p.tarefas.sort((a, b) => ordem[a[0]] - ordem[b[0]]);
+    for (const it of p.itens) {
+      it[2] = Math.round(it[2] * 100) / 100;
+      it[3] = Math.round(it[3] * 100) / 100;
+    }
+    p.rn = Object.entries(_rn).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '';
+    return p;
+  });
 
   return {
     versao: VERSAO_MODELO,

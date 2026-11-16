@@ -30,6 +30,8 @@ export interface ItemPedido {
   dataFat?: string;
   /** Só no faturado: código da operação (1 = venda, 2 = bonificação…). */
   op?: string;
+  /** Só no faturado: número da nota fiscal. */
+  nota?: string;
 }
 
 /** Uma tarefa do export BEES Force. */
@@ -93,7 +95,10 @@ export interface Resultado {
   meta: number;
   /** Parte do progresso que veio do faturado anterior ao dia. */
   antes?: number;
+  /** Linhas do pedido do dia (ou das notas do mês) que bateram com a tarefa. */
   itens: ItemPedido[];
+  /** Linhas do faturado anterior ao dia que bateram (acumulado da vespertina). */
+  itensAntes?: ItemPedido[];
 }
 
 export interface OpcoesMes {

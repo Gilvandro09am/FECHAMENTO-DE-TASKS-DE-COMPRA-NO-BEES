@@ -11,13 +11,19 @@ import {
   type Indicador,
   type Indice,
   type IndiceDia,
+  type ItemProva,
+  type PdvFechamento,
   type TipoFechamento,
 } from '../shared/modelo';
 import { calcular, type Filtros, type LinhaSetor, type Totais } from './agregacao';
+import { CAB_PDV, csvTexto, linhasPdv } from './exportacao';
 
 // ---------- utilidades ----------
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const fmt = (n: number) => n.toLocaleString('pt-BR');
+const num = (n: number) => n.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+const reais = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const dataCurta = (iso: string) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '');
 const pct = (x: number | null, casas = 0) => (x == null ? '—' : (x * 100).toFixed(casas).replace('.', ',') + '%');
 const dataBr = (iso: string) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '');
 const horaBr = (iso: string) =>
@@ -151,20 +157,37 @@ async function carregar(modo: TipoFechamento, chave: string) {
   aviso.textContent = 'Este fechamento foi gerado com outra versão do painel. Recarregue a página.';
 }
 
+const promessas = new Map<string, Promise<DetalheSetor>>();
+
 /** Detalhe dos PDVs do setor: no próprio fechamento ou num arquivo por setor (carregado sob demanda). */
+function obterDetalhe(f: Fechamento, setorId: string): Promise<DetalheSetor> {
+  if (!f.detalhePorSetor) return Promise.resolve({ pdvs: f.pdvs.filter((p) => p.setorId === setorId), textos: f.textos });
+  const k = `${f.tipo}/${f.chave}/${setorId}`;
+  let pr = promessas.get(k);
+  if (!pr) {
+    cacheDetalhe.set(k, 'carregando');
+    pr = buscarJson<DetalheSetor>(`data/${TXT[f.tipo].pasta}/${f.chave}/${arquivoSetor(setorId)}.json`);
+    pr.then((d) => cacheDetalhe.set(k, d)).catch(() => {
+      cacheDetalhe.set(k, 'erro');
+      promessas.delete(k); // deixa tentar de novo
+    });
+    promessas.set(k, pr);
+  }
+  return pr;
+}
+
 function detalheDoSetor(setorId: string): DetalheSetor | 'carregando' | 'erro' {
   const f = F!;
   if (!f.detalhePorSetor) return { pdvs: f.pdvs.filter((p) => p.setorId === setorId), textos: f.textos };
   const k = `${f.tipo}/${f.chave}/${setorId}`;
   const c = cacheDetalhe.get(k);
-  if (c) return c;
-  cacheDetalhe.set(k, 'carregando');
-  buscarJson<DetalheSetor>(`data/${TXT[f.tipo].pasta}/${f.chave}/${arquivoSetor(setorId)}.json`)
-    .then((d) => cacheDetalhe.set(k, d))
-    .catch(() => cacheDetalhe.set(k, 'erro'))
-    .finally(() => {
-      if (F === f && EST.aberto === setorId) render();
-    });
+  if (c && c !== 'carregando') return c;
+  if (!c)
+    obterDetalhe(f, setorId)
+      .catch(() => undefined)
+      .finally(() => {
+        if (F === f && EST.aberto === setorId) render();
+      });
   return 'carregando';
 }
 
@@ -352,16 +375,22 @@ function gaveta(l: LinhaSetor): string {
   const nomes = STATUS_NOME[f.tipo];
   const mes = f.tipo === 'mes';
   let h = `<div class="drawer"><div class="top"><h3>Setor ${s.setor} · ${esc(s.revenda)}${s.nb ? ' · ' + esc(s.nb) : ''}</h3>
-    <div class="toolbar"><button class="btn small" data-acao="link" type="button">Copiar link do setor</button><button class="btn small" data-acao="fechar" type="button">Fechar</button></div></div>`;
+    <div class="toolbar"><button class="btn small" data-acao="csv-setor" type="button">Baixar CSV do setor (por PDV)</button><button class="btn small" data-acao="link" type="button">Copiar link do setor</button><button class="btn small" data-acao="fechar" type="button">Fechar</button></div></div>`;
 
   const det = detalheDoSetor(s.id);
   if (det === 'carregando') return h + '<div class="empty">Carregando os PDVs do setor…</div></div>';
-  if (det === 'erro') return h + '<div class="empty">Não foi possível carregar os PDVs deste setor. Tente de novo.</div></div>';
+  if (det === 'erro') {
+    // Próxima abertura tenta de novo.
+    cacheDetalhe.delete(`${f.tipo}/${f.chave}/${s.id}`);
+    return h + '<div class="empty">Não foi possível carregar os PDVs deste setor. Feche e abra de novo.</div></div>';
+  }
 
   const filtroInd = EST.ind === 'todos' ? -1 : INDICADORES.indexOf(EST.ind);
   const pdvs = det.pdvs
     .map((p) => {
-      const tarefas = p.tarefas.filter((t) => filtroInd < 0 || t[1] === filtroInd);
+      // Concluídas primeiro: no mês, as validadas pelo BEES também contam como concluídas.
+      const ordem: Record<string, number> = mes ? { F: 0, V: 1, P: 2, N: 3, X: 4 } : { F: 0, P: 1, N: 2, V: 3, X: 4 };
+      const tarefas = p.tarefas.filter((t) => filtroInd < 0 || t[1] === filtroInd).sort((a, b) => ordem[a[0]] - ordem[b[0]]);
       const cont = (st: string) => tarefas.filter((t) => t[0] === st).length;
       return { p, tarefas, feitas: cont('F') + (mes ? cont('V') : 0), parciais: cont('P') };
     })
@@ -374,16 +403,44 @@ function gaveta(l: LinhaSetor): string {
   if (!pdvs.length) h += `<div class="empty">Nenhum PDV deste setor ${mes ? 'teve nota no mês' : 'fez pedido neste dia'}.</div>`;
   pdvs.forEach(({ p, tarefas, feitas, parciais }, i) => {
     h += `<details class="pdv"${i < 3 && feitas ? ' open' : ''}><summary><span class="nm">${esc(p.nome) || 'PDV'}</span>
-      <span class="cd">${p.pdv}${p.visita ? ' · visita ' + dataBr(p.visita) : ''}</span><span class="chips">
+      <span class="cd">PDV ${p.pdv}${p.visita ? ' · visita ' + dataBr(p.visita) : ''}${p.rn ? ' · RN ' + esc(p.rn) : ''}</span><span class="chips">
       ${feitas ? `<span class="pill p-F">${feitas} ${mes ? 'concluídas' : 'feitas'}</span>` : ''}${parciais ? `<span class="pill p-P">${parciais} parciais</span>` : ''}
       <span class="pill p-tot">${tarefas.length} tarefas</span></span></summary><div class="tl">`;
-    for (const [st, ind, md, txt, prog, itens] of tarefas) {
+    for (const [st, ind, md, txt, prog, provas, valid] of tarefas) {
       h += `<div class="trow"><div><span class="pill p-${st}">${nomes[st]}</span><div class="ix">${NOME_CURTO[INDICADORES[ind]]} · ${md === 'M' ? 'Mensal' : 'Diária'}</div></div>
-        <div class="tx">${esc(det.textos[txt])}${itens ? `<small>${esc(itens)}</small>` : ''}</div><div class="pg">${st === 'X' ? '' : esc(prog)}</div></div>`;
+        <div class="tx"><span class="tt">${esc(det.textos[txt])}</span>${provaHtml(p, provas, st, valid)}</div><div class="pg">${st === 'X' ? '' : esc(prog)}</div></div>`;
     }
     h += '</div></details>';
   });
   return h + '</div>';
+}
+
+/** Compras que comprovam a tarefa: produto, caixas, valor, pedido ou nota, data e RN. */
+function provaHtml(p: PdvFechamento, provas: number[], st: string, valid: string): string {
+  let h = '';
+  if (st === 'V') h += `<div class="valid">✓ Validada no BEES${valid ? ` em ${dataBr(valid)}` : ''}</div>`;
+  if (st === 'X') h += '<div class="semprova">Não dá para comprovar pelos pedidos: depende de informação que não vem nos arquivos.</div>';
+  if (!provas.length) {
+    if (st === 'N') h += '<div class="semprova">Nenhum item comprado bate com esta tarefa.</div>';
+    return h;
+  }
+  h += '<ul class="prova">';
+  for (const i of provas) {
+    const it = p.itens[i];
+    if (it) h += `<li>${provaLinha(it)}</li>`;
+  }
+  return h + '</ul>';
+}
+
+function documento([, , , , ped, nf, data, rn, o]: ItemProva): string {
+  return o === 'F'
+    ? `${nf ? `NF ${nf}` : 'Nota'}${ped ? ` · pedido ${ped}` : ''} · entregue ${dataCurta(data)}`
+    : `Pedido ${ped} · ${dataCurta(data)}${rn ? ` · RN ${rn}` : ''}`;
+}
+
+function provaLinha(it: ItemProva): string {
+  const [cod, d, q, v] = it;
+  return `<b>${esc(d)}</b> <span class="cod">${esc(cod)}</span> <span class="q">${num(q)} cx · ${reais(v)}</span> <span class="doc">${esc(documento(it))}</span>`;
 }
 
 function render() {
@@ -440,6 +497,32 @@ function tabelaTexto(sep: string): string {
     );
   return [cab.map(q).join(sep), ...linhas].join('\n');
 }
+
+async function baixarCsvPdv(setores: LinhaSetor['s'][], nome: string, botao: HTMLButtonElement) {
+  const f = F!;
+  const filtroInd = EST.ind === 'todos' ? -1 : INDICADORES.indexOf(EST.ind);
+  const rotulo = botao.textContent;
+  botao.disabled = true;
+  try {
+    const linhas: string[][] = [CAB_PDV];
+    // Carrega de 6 em 6 setores para não travar o navegador.
+    for (let i = 0; i < setores.length; i += 6) {
+      const lote = setores.slice(i, i + 6);
+      const dets = await Promise.all(lote.map((s) => obterDetalhe(f, s.id)));
+      lote.forEach((s, j) => linhas.push(...linhasPdv(f, s, dets[j], filtroInd)));
+      botao.textContent = `Carregando ${Math.min(i + 6, setores.length)}/${setores.length}…`;
+    }
+    baixar(nome, csvTexto(linhas));
+    toast(`${fmt(linhas.length - 1)} tarefas exportadas.`);
+  } catch {
+    toast('Não foi possível carregar todos os setores. Tente de novo.');
+  } finally {
+    botao.disabled = false;
+    botao.textContent = rotulo;
+  }
+}
+
+const nomeArquivo = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w-]+/g, '-').toLowerCase();
 
 // ---------- eventos ----------
 async function trocar(modo: TipoFechamento, chave: string) {
@@ -520,11 +603,21 @@ function ligarEventos() {
     if (acao === 'fechar') {
       EST.aberto = null;
       render();
+    } else if (acao === 'csv-setor') {
+      const s = F!.setores.find((x) => x.id === EST.aberto);
+      const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button')!;
+      if (s) void baixarCsvPdv([s], nomeArquivo(`tasks-pdv-${F!.tipo}-${F!.chave}-${s.revenda}-setor-${s.setor}`) + '.csv', b);
     } else if (acao === 'link') {
       void copiar(location.href, 'Link do setor copiado. Envie para o RN.');
     }
   });
   $('bCsv').addEventListener('click', () => baixar(`tasks-compra-${F!.tipo}-${F!.chave}.csv`, tabelaTexto(';')));
+  $('bCsvPdv').addEventListener('click', (e) => {
+    const setores = calcular(F!, EST).linhas.map((l) => l.s);
+    if (!setores.length) return toast('Nenhum setor com esses filtros.');
+    const rev = EST.rev === 'todas' ? 'todas-revendas' : EST.rev;
+    void baixarCsvPdv(setores, nomeArquivo(`tasks-pdv-${F!.tipo}-${F!.chave}-${rev}`) + '.csv', e.currentTarget as HTMLButtonElement);
+  });
   $('bCopy').addEventListener('click', () => void copiar(tabelaTexto('\t'), 'Tabela copiada. Cole no Excel.'));
   $('bRules').addEventListener('click', () => {
     const c = $('rulesCard');

@@ -1,22 +1,22 @@
 {
-  "versao": 3,
-  "atualizadoEm": "2026-11-13T18:13:32.153Z",
+  "versao": 4,
+  "atualizadoEm": "2026-11-16T20:21:25.946Z",
   "dias": [
     {
       "chave": "2026-11-12",
       "dia": "2026-11-12",
-      "geradoEm": "2026-11-13T18:13:18.862Z",
-      "feitas": 1924,
+      "geradoEm": "2026-11-16T20:21:07.559Z",
+      "feitas": 1919,
       "pdvComPedido": 1669
     }
   ],
   "meses": [
     {
       "chave": "2026-11",
-      "dia": "2026-11-13",
-      "geradoEm": "2026-11-13T18:13:31.684Z",
-      "feitas": 20409,
-      "pdvComPedido": 11377
+      "dia": "2026-11-16",
+      "geradoEm": "2026-11-16T20:21:25.110Z",
+      "feitas": 22991,
+      "pdvComPedido": 11976
     }
   ]
 }

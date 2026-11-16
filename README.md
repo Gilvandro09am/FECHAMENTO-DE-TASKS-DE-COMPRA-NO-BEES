@@ -79,7 +79,13 @@ npm run fechamento -- --dia 2026-11-04      # refaz a vespertina de outro dia
 npm run fechamento -- --so-dia              # só a vespertina
 npm run fechamento -- --so-mes              # só o painel do mês
 npm run fechamento -- --sem-bloqueados      # não conta pedidos bloqueados
+npm run fechamento -- --so-mes --diagnostico   # lista as tarefas validadas pelo BEES que o motor não reconhece
 ```
+
+O `--diagnostico` grava `base/diagnostico-afericao.txt` (fora do Git) com cada texto de tarefa que o BEES validou
+e o motor não reconheceu pelo faturado, e o que o PDV comprou no mês — é o ponto de partida para ajustar uma regra.
+As tarefas **[Vizinhança]** aparecem muito ali: o BEES as valida mesmo sem compra no faturado da revenda (a compra
+vem por outro canal), então o painel só as dá como feitas quando há compra que comprove.
 
 Os `.csv` são reconhecidos pelo **cabeçalho**, não pelo nome: pode chamar o arquivo do jeito que quiser
 (`Pedidos_Cora.csv`, `03.02.37.csv`…).
@@ -98,8 +104,12 @@ A cesta só precisa ir para `entrada/` quando mudar: a última usada fica guarda
 
 - Abrem o link do site (não precisa de login).
 - Escolhem o painel (Vespertina ou Mês), o fechamento, a revenda, o GV, o indicador ou buscam pelo setor/nome do NB.
-- Clicam no setor para ver cada PDV que comprou, as tarefas feitas, parciais e não feitas, e os itens do pedido
-  que fecharam cada uma.
+- Clicam no setor para ver cada PDV que comprou e a **comprovação de cada tarefa**: o texto da tarefa do BEES e
+  as compras que a fecharam — produto, código, caixas, valor, nº do pedido com o RN que digitou (vespertina) ou
+  nº da nota fiscal com a data de entrega (mês). Tarefas validadas pelo BEES mostram a data da validação.
+- **Baixar CSV por PDV** (no topo da tabela, respeita os filtros) ou **Baixar CSV do setor** (dentro do setor):
+  uma linha por tarefa de cada PDV, com o RN, o texto da tarefa, o status e os produtos, pedidos e notas que a
+  comprovam. **Baixar CSV por setor** continua com o resumo de um setor por linha.
 - **Copiar link do setor** gera um link que já abre no setor: dá para mandar no WhatsApp de cada RN.
 - **Baixar CSV** / **Copiar tabela** levam a tabela para o Excel.
 

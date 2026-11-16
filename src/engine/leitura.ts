@@ -156,10 +156,11 @@ export function lerFaturados(linhas: Linha[], cesta: Cesta, opts: OpcoesFaturado
       unidade: '',
       pdv: cod(r['Cliente']),
       nome: txt(r['Nome']).trim(),
-      pedido: txt(r['Nr. Pedido']).trim(),
+      pedido: txt(r['Nr. Pedido']).trim().replace(/^0+(?=\d)/, ''),
       dataEntrada: iso(r['Data Captura Pedido']),
       // Data de entrega da nota (coluna "Emissao" do Promax): é ela que define o mês.
       dataFat: iso(r['Emissao']),
+      nota: txt(r['Nota']).trim().replace(/^0+(?=\d)/, ''),
       situacao: status,
       op: cod(r['Operacao .']),
       mov: 'VENDA',

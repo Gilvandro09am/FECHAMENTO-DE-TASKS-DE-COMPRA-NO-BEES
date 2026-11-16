@@ -67,6 +67,7 @@ function medir(r: Resultado, linhas: ItemPedido[], antes: ItemPedido[], meta: nu
   r.antes = hitAntes.length ? progresso(regra, hitAntes) : 0;
   r.prog = progresso(regra, hitAntes.length ? [...hitAntes, ...hit] : hit);
   r.itens = hit;
+  r.itensAntes = hitAntes;
   if (hitAntes.length && r.antes >= r.meta) r.status = 'Já validada';
   else r.status = hit.length && r.prog >= r.meta ? 'Feita no dia' : hit.length ? 'Parcial' : 'Não feita';
 }
@@ -98,6 +99,11 @@ function avaliarCom(
     const reaberta = validada && !!reabrirValidadasDesde && !!task.conclusao && task.conclusao >= reabrirValidadasDesde;
     if (validada && !reaberta) {
       r.status = 'Já validada';
+      // Comprovação: compras do PDV que batem com a tarefa já validada pelo BEES (não muda o status).
+      if (regra.fn && regra.tipo !== 'nv' && doPdv.length) {
+        const fn = regra.fn;
+        r.itens = linhasDaTarefa(task, doPdv).filter((o) => (o.tipoItem !== 'REDEEMABLE' || regra.resgate || regra.tipo === 'any') && fn(o));
+      }
       continue;
     }
     if (regra.tipo === 'nv' || !regra.fn) {

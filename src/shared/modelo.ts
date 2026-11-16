@@ -2,7 +2,7 @@
  * Formato dos arquivos publicados em public/data — o contrato entre a rotina de
  * fechamento (que grava) e o painel (que lê). Mudou o formato? Suba VERSAO_MODELO.
  */
-export const VERSAO_MODELO = 3;
+export const VERSAO_MODELO = 4;
 
 /** dia = vespertina (pedidos digitados no dia); mes = tarefas concluídas pelo faturado do mês. */
 export type TipoFechamento = 'dia' | 'mes';
@@ -68,15 +68,30 @@ export const STATUS_NOME: Record<TipoFechamento, Record<CodStatus, string>> = {
   mes: { F: 'Concluída (faturado)', P: 'Parcial', N: 'Não feita', V: 'Validada BEES', X: 'Não verificável' },
 };
 
-/** [status, índice do indicador, 'M'|'D', índice do texto em `textos`, progresso, itens que bateram] */
-export type TarefaDetalhe = [CodStatus, number, 'M' | 'D', number, string, string];
+/**
+ * [status, índice do indicador, 'M'|'D', índice do texto em `textos`, progresso,
+ *  índices em `PdvFechamento.itens` das compras que comprovam a tarefa, data de validação no BEES (AAAA-MM-DD)]
+ */
+export type TarefaDetalhe = [CodStatus, number, 'M' | 'D', number, string, number[], string];
+
+/**
+ * Uma compra que comprova tarefa (linhas iguais do mesmo pedido/nota somadas):
+ * [código do produto, descrição, caixas, valor R$, nº do pedido, nº da nota fiscal, data, vendedor, origem]
+ * Data = entrada do pedido (origem P) ou entrega da nota (origem F).
+ * Origem: P = pedido do dia (vespertina) · F = nota faturada no mês.
+ */
+export type ItemProva = [string, string, number, number, string, string, string, string, 'P' | 'F'];
+export const PROVA_ORIGEM: Record<ItemProva[8], string> = { P: 'Pedido do dia', F: 'Nota faturada' };
 
 export interface PdvFechamento {
   setorId: string;
   pdv: string;
   nome: string;
   visita: string;
+  /** Vendedor (RN) que digitou os pedidos do PDV no dia; vazio no mês (a nota não traz o vendedor). */
+  rn: string;
   tarefas: TarefaDetalhe[];
+  itens: ItemProva[];
 }
 
 export interface Fechamento {

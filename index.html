@@ -62,7 +62,8 @@
         <div class="hd">
           <h2>Por setor</h2>
           <div class="toolbar">
-            <button class="btn" id="bCsv" type="button">Baixar CSV</button>
+            <button class="btn" id="bCsvPdv" type="button" title="Uma linha por tarefa de cada PDV, com o texto da tarefa e o produto vendido">Baixar CSV por PDV</button>
+            <button class="btn" id="bCsv" type="button" title="Uma linha por setor">Baixar CSV por setor</button>
             <button class="btn" id="bCopy" type="button">Copiar tabela</button>
           </div>
         </div>
@@ -118,6 +119,8 @@
             <dd>Cobertura de CERVEJA, NAB, MATCH ou MARKETPLACE, "qualquer SKU de" uma indústria e "qualquer produto": vale qualquer item da cesta ou do fornecedor citado.</dd>
             <dt>Equivalências</dt>
             <dd>Confirmadas nas tarefas validadas pelo BEES: lata 350 aceita multipack; Guaraná normal aceita Zero/Diet; Inteira = garrafa 600 ml (retornável ou one way); long neck inclui one way pequena (ex.: Budweiser OW 330).</dd>
+            <dt>Comprovação</dt>
+            <dd>Ao abrir um setor, cada tarefa mostra o texto do BEES e as compras que a fecharam: produto, código, caixas, valor, nº do pedido (com o RN que digitou) ou nº da nota fiscal com a data de entrega. O botão "Baixar CSV por PDV" leva isso para o Excel, uma linha por tarefa.</dd>
             <dt>Parcial</dt>
             <dd>O PDV comprou o produto, mas ainda não o suficiente para fechar a tarefa.</dd>
             <dt>Não verificável</dt>

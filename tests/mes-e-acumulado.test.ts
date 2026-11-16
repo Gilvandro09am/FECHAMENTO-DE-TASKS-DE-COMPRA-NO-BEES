@@ -20,6 +20,13 @@ describe('textos novos (Guarabira, Sousa, Itaporanga)', () => {
     ['[VM] [Score 5] [Vizinhança] Auxilie o PDV a comprar 2 cxs de LITRINHO DE CERVEJA.', 'qty', 'LITRINHO'],
     ['Auxilie na cobertura de 1 cx de RED BULL SABORES (SUGAR FREE, TROPICAL, MELANCIA, ZERO, REGULAR 473ML E OUTROS)', 'qty', 'RED BULL'],
     ['[VM] Ajude na venda de 6 caixa(s) de SPATEN GFA600 CX12.', 'qty', 'SPATEN GFA600 CX12'],
+    ['Auxilie na cobertura de qualquer SKU. PDV não comprador.', 'any', 'Qualquer produto'],
+    ['[VM] [3P] [AURORA] Aurora esta no BEES. Auxilie o PDV a comprar qualquer SKU', 'nv', undefined],
+    ['Ajude na venda de 5 caixa(s) de CARACU LATA 350.', 'qty', 'CARACU LATA 350'],
+    ['[VM][ZÉ CESTAS] Auxilie o PDV na cobertura de Soda Antarctica Zero 2L.', 'any', 'SODA ANTARCTICA ZERO 2L'],
+    ['[VM][ZÉ] Auxilie o PDV na cobertura de ORIGINAL LT 473ML SH C12 NP MULTPACK do portfólio ideal.', 'any', 'ORIGINAL LT 473ML SH C12 NP MULTPACK'],
+    ['[VM][ZÉ] Auxilie o PDV na cobertura de GUARANA CHP ANTARCTICA PET 1L CAIXA C/6 do portfólio ideal.', 'any', 'GUARANA CHP ANTARCTICA PET 1L CAIXA C/6'],
+    ['Auxilie o PDV a comprar 6 SKUs distintos de +LN Long Necks HE (Stellas, Spaten, Coronas e Michelob). no mês.', 'sku', undefined],
   ])('%s', (texto, tipo, alvo) => {
     const r = interpretarTarefa(texto);
     expect(r.tipo).toBe(tipo);

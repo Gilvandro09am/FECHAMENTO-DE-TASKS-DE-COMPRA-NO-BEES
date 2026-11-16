@@ -242,3 +242,17 @@ tr.sum td { font-weight: 600; border-top: 2px solid var(--ink); background: var(
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Comprovação da tarefa: compras que a fecharam */
+.tx .tt { display: block; }
+.prova { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 3px; }
+.prova li {
+  font-size: 12px; line-height: 1.4; color: var(--muted);
+  padding: 3px 0 3px 10px; border-left: 2px solid var(--ok);
+}
+.prova b { color: var(--ink); font-weight: 500; }
+.prova .cod { font: 11px var(--mono); color: var(--muted); }
+.prova .q { font: 500 11.5px var(--mono); color: var(--ink); white-space: nowrap; }
+.prova .doc { display: inline-block; font-size: 11.5px; }
+.valid { margin-top: 5px; font-size: 12px; color: var(--ok); font-weight: 500; }
+.semprova { margin-top: 5px; font-size: 12px; color: var(--muted); font-style: italic; }
