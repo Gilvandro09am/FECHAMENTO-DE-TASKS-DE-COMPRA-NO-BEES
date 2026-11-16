@@ -9,12 +9,15 @@ import {
   VERSAO_MODELO,
   type CodStatus,
   type Contagem,
+  type ArquivoDivergencias,
+  type Divergencia,
   type Fechamento,
   type ItemProva,
   type PdvFechamento,
   type SetorFechamento,
   type TipoFechamento,
 } from '../shared/modelo';
+import { norm } from './texto';
 import type { ItemPedido, Resultado, Status } from './tipos';
 
 const COD: Partial<Record<Status, CodStatus>> = {
@@ -215,4 +218,65 @@ export function montarFechamento(resultados: Resultado[], o: OpcoesFechamento): 
     pdvs: listaPdvs,
     textos,
   };
+}
+
+/** Compras que comprovam a tarefa, somando linhas do mesmo produto no mesmo pedido/nota. */
+export function provasDe(itens: ItemPedido[]): ItemProva[] {
+  const m = new Map<string, ItemProva>();
+  for (const x of new Set(itens)) {
+    const nota = x.dataFat !== undefined;
+    const data = nota ? (x.dataFat ?? '') : x.dataEntrada;
+    const k = [x.cod || x.d, x.pedido, x.nota ?? '', data, x.tipoItem].join('|');
+    const it = m.get(k) ?? ([x.cod, x.d, 0, 0, x.pedido, x.nota ?? '', data, x.vendedor, nota ? 'F' : 'P'] as ItemProva);
+    it[2] = Math.round((it[2] + x.qty) * 100) / 100;
+    it[3] = Math.round((it[3] + x.valor) * 100) / 100;
+    m.set(k, it);
+  }
+  return [...m.values()].sort((a, b) => a[6].localeCompare(b[6]));
+}
+
+const diasEntre = (de: string, ate: string) => Math.round((Date.parse(ate) - Date.parse(de)) / 86_400_000);
+
+/**
+ * Tarefas ABERTAS no BEES que o faturado do mês já comprova (status calculado "concluída").
+ * Referência de cada revenda = última data de validação que o export de tarefas traz: notas entregues
+ * `tolerancia` dias ou mais antes dela já deveriam estar validadas.
+ */
+/** Textos que o BEES valida por etapas ou por adesão no app ("concluir a missão", "desafio"): ficam fora. */
+const SO_BEES = /CONCLUIR A MISSAO|DESAFIO DISPONIVEL/;
+
+export function montarDivergencias(
+  resultados: Resultado[],
+  o: { mes: string; tolerancia: number; cadastro: Cadastro },
+): ArquivoDivergencias {
+  const referencia: Record<string, string> = {};
+  for (const r of resultados) {
+    const c = r.task.conclusao;
+    if (c && c.startsWith(o.mes) && c > (referencia[r.task.unb] ?? '')) referencia[r.task.unb] = c;
+  }
+  const linhas: Divergencia[] = [];
+  for (const r of resultados) {
+    const t = r.task;
+    if (t.status === 'VALID' || r.status !== 'Feita no dia' || SO_BEES.test(norm(t.texto))) continue;
+    const antesVisita = !r.quandoAposVisita;
+    // Data que vale: a meta fechada com pedidos a partir da visita (ou, se só antes, a data original).
+    const quando = (antesVisita ? r.quando : r.quandoAposVisita) ?? '';
+    const ref = referencia[t.unb] ?? '';
+    linhas.push({
+      setorId: `${t.unb}|${t.setor}`,
+      pdv: t.pdv,
+      nome: o.cadastro.nomePdv[`${t.unb}|${t.pdv}`] ?? '',
+      ind: INDICADORES.indexOf(r.ind),
+      md: t.tipoMD === 'Mensal' ? 'M' : 'D',
+      texto: t.texto,
+      prog: textoProgresso(r),
+      quando,
+      dias: quando && ref ? diasEntre(quando, ref) : 0,
+      antesVisita,
+      visita: t.visita,
+      itens: provasDe(r.itens),
+    });
+  }
+  linhas.sort((a, b) => b.dias - a.dias || a.setorId.localeCompare(b.setorId) || a.pdv.localeCompare(b.pdv));
+  return { versao: VERSAO_MODELO, mes: o.mes, geradoEm: new Date().toISOString(), tolerancia: o.tolerancia, referencia, linhas };
 }

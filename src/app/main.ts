@@ -10,12 +10,22 @@ import {
   type Fechamento,
   type Indicador,
   type Indice,
+  type ArquivoDivergencias,
   type IndiceDia,
   type ItemProva,
   type PdvFechamento,
   type TipoFechamento,
 } from '../shared/modelo';
-import { calcular, type Filtros, type LinhaSetor, type Totais } from './agregacao';
+import { calcular, setoresFiltrados, type Filtros, type LinhaSetor, type Totais } from './agregacao';
+import {
+  agruparDivergencias,
+  CAB_DIV,
+  linhasCsvDiv,
+  NOME_SITUACAO,
+  situacao,
+  type LinhaDivSetor,
+  type Situacao,
+} from './divergencias';
 import { CAB_PDV, csvTexto, linhasPdv } from './exportacao';
 
 // ---------- utilidades ----------
@@ -99,15 +109,19 @@ const TXT: Record<
 };
 
 // ---------- estado (espelhado na URL para links diretos por setor) ----------
+/** dia = vespertina · mes = faturado · div = divergências (abertas no BEES que o faturado já comprova). */
+type Modo = TipoFechamento | 'div';
 interface Estado extends Filtros {
-  modo: TipoFechamento;
+  modo: Modo;
+  sit: Situacao;
   chave: string;
   aberto: string | null; // id do setor com a gaveta aberta
   ordem: { k: string; d: 1 | -1 };
 }
 const url = new URLSearchParams(location.search);
 const EST: Estado = {
-  modo: url.get('m') === 'mes' ? 'mes' : 'dia',
+  modo: url.get('m') === 'mes' ? 'mes' : url.get('m') === 'div' ? 'div' : 'dia',
+  sit: url.get('sit') === 'todas' ? 'todas' : 'atrasadas',
   chave: url.get('dia') ?? url.get('mes') ?? '',
   rev: url.get('rev') ?? 'todas',
   gv: url.get('gv') ?? 'todos',
@@ -116,11 +130,15 @@ const EST: Estado = {
   aberto: url.get('setor'),
   ordem: { k: 'feitas', d: -1 },
 };
-const listaDoModo = (): IndiceDia[] => (EST.modo === 'dia' ? INDICE!.dias : INDICE!.meses);
+const listaDe = (m: Modo): IndiceDia[] =>
+  m === 'dia' ? INDICE!.dias : m === 'mes' ? INDICE!.meses : INDICE!.meses.filter((x) => INDICE!.divergencias?.some((d) => d.chave === x.chave));
+const listaDoModo = () => listaDe(EST.modo);
+const tipoDo = (m: Modo): TipoFechamento => (m === 'dia' ? 'dia' : 'mes');
 
 function gravarUrl() {
   const p = new URLSearchParams();
-  if (EST.modo === 'mes') p.set('m', 'mes');
+  if (EST.modo !== 'dia') p.set('m', EST.modo);
+  if (EST.modo === 'div' && EST.sit === 'todas') p.set('sit', 'todas');
   if (EST.chave && EST.chave !== listaDoModo()[0]?.chave) p.set(EST.modo === 'dia' ? 'dia' : 'mes', EST.chave);
   if (EST.rev !== 'todas') p.set('rev', EST.rev);
   if (EST.gv !== 'todos') p.set('gv', EST.gv);
@@ -143,12 +161,24 @@ async function buscarJson<T>(caminho: string): Promise<T> {
   return r.json() as Promise<T>;
 }
 
-async function carregar(modo: TipoFechamento, chave: string) {
-  const k = `${modo}/${chave}`;
+let DIV: ArquivoDivergencias | null = null;
+const cacheDiv = new Map<string, ArquivoDivergencias>();
+
+async function carregar(modo: Modo, chave: string) {
+  const tipo = tipoDo(modo);
+  const k = `${tipo}/${chave}`;
   let f = cache.get(k);
   if (!f) {
-    f = await buscarJson<Fechamento>(`data/${TXT[modo].pasta}/${chave}.json`);
+    f = await buscarJson<Fechamento>(`data/${TXT[tipo].pasta}/${chave}.json`);
     cache.set(k, f);
+  }
+  if (modo === 'div') {
+    let d = cacheDiv.get(chave);
+    if (!d) {
+      d = await buscarJson<ArquivoDivergencias>(`data/divergencias/${chave}.json`);
+      cacheDiv.set(chave, d);
+    }
+    DIV = d;
   }
   F = f;
   const aviso = $('aviso');
@@ -197,20 +227,23 @@ function revendas() {
 }
 
 function renderControles() {
-  $('segModo').innerHTML = (['dia', 'mes'] as const)
-    .map(
-      (m) =>
-        `<button type="button" data-modo="${m}" aria-pressed="${EST.modo === m}"${(m === 'dia' ? INDICE!.dias : INDICE!.meses).length ? '' : ' disabled'}>${
-          m === 'dia' ? 'Vespertina · pedidos do dia' : 'Mês · faturado'
-        }</button>`,
-    )
-    .join('');
+  const ABAS: [Modo, string][] = [
+    ['dia', 'Vespertina · pedidos do dia'],
+    ['mes', 'Mês · faturado'],
+    ['div', 'Divergências · abertas no BEES'],
+  ];
+  $('segModo').innerHTML = ABAS.map(
+    ([m, nome]) =>
+      `<button type="button" data-modo="${m}" aria-pressed="${EST.modo === m}"${listaDe(m).length ? '' : ' disabled'}>${nome}</button>`,
+  ).join('');
   $('selDia').innerHTML = listaDoModo()
-    .map((d) =>
-      EST.modo === 'dia'
-        ? `<option value="${d.chave}">${dataBr(d.dia)} · ${diaSemana(d.dia)} · ${fmt(d.feitas)} feitas</option>`
-        : `<option value="${d.chave}">${mesBr(d.chave)} · entregas até ${dataBr(d.dia)} · ${fmt(d.feitas)} concluídas</option>`,
-    )
+    .map((d) => {
+      if (EST.modo === 'dia') return `<option value="${d.chave}">${dataBr(d.dia)} · ${diaSemana(d.dia)} · ${fmt(d.feitas)} feitas</option>`;
+      if (EST.modo === 'mes')
+        return `<option value="${d.chave}">${mesBr(d.chave)} · entregas até ${dataBr(d.dia)} · ${fmt(d.feitas)} concluídas</option>`;
+      const dv = INDICE!.divergencias?.find((x) => x.chave === d.chave);
+      return `<option value="${d.chave}">${mesBr(d.chave)} · ${fmt(dv?.atrasadas ?? 0)} atrasadas</option>`;
+    })
     .join('');
   $<HTMLSelectElement>('selDia').value = EST.chave;
   $('lblDia').textContent = EST.modo === 'dia' ? 'Fechamento' : 'Mês';
@@ -445,12 +478,185 @@ function provaLinha(it: ItemProva): string {
 
 function render() {
   if (!F) return;
+  $('segSit').hidden = EST.modo !== 'div';
+  if (EST.modo === 'div') {
+    renderDiv();
+    gravarUrl();
+    return;
+  }
   const res = calcular(F, EST);
   renderCabecalho();
   renderKpis(res.tot);
   renderIndicadores(res.tot);
   renderTabela(res);
   gravarUrl();
+}
+
+// ---------- aba Divergências ----------
+const PILL_SIT = { atrasada: 'p-N', recente: 'p-P', antes: 'p-X' } as const;
+
+function divAtual(sit: Situacao = EST.sit) {
+  return agruparDivergencias(DIV!, setoresFiltrados(F!, EST), EST.ind, sit);
+}
+
+function renderDiv() {
+  const a = DIV!,
+    f = F!;
+  const res = divAtual();
+  const todas = EST.sit === 'todas' ? res : divAtual('todas');
+  const tol = a.tolerancia;
+  document.title = 'Divergências BEES';
+  $('ebrow').textContent = 'Pau Brasil · ' + revendas().join(' · ');
+  $('h1').innerHTML = 'Tasks de compra <span>abertas no BEES</span>';
+  const refs = Object.entries(a.referencia)
+    .map(([unb, d]) => `${esc(f.setores.find((s) => s.unb === unb)?.revenda ?? unb)} ${dataCurta(d)}`)
+    .join(' · ');
+  $('src').innerHTML =
+    `Tarefas de <b>${mesBr(a.mes)}</b> que seguem <b>abertas no BEES</b>, mas o faturado (entregas até ${dataBr(f.dia)}) já comprova. ` +
+    `Export do BEES (última validação): ${refs}.`;
+  $('foot').innerHTML =
+    `<b>Atrasada</b>: pedido digitado a partir da visita da tarefa e nota entregue há ${tol}+ dias antes do export do BEES — já deveria estar validada. ` +
+    '<b>Recente</b>: entregue há menos tempo, o BEES ainda pode validar. <b>Compra antes da visita</b>: a meta só fecha com pedidos anteriores à visita; o BEES costuma não considerar. ' +
+    'Ficam fora as tarefas de "missão" e "desafio", que o BEES valida por etapas ou por adesão no app.';
+  $('legF').textContent = 'Atrasadas';
+  $('legB').textContent = 'Todas as divergências';
+
+  const t = todas.tot;
+  $('kpis').innerHTML = `
+    <div class="kpi lead"><div class="k">Atrasadas</div><div class="v">${fmt(t.atrasadas)}</div><div class="s">abertas no BEES com nota entregue há ${tol}+ dias</div></div>
+    <div class="kpi"><div class="k">Recentes</div><div class="v">${fmt(t.recentes)}</div><div class="s">entregues há menos de ${tol} dias do export (aguardando)</div></div>
+    <div class="kpi"><div class="k">Compra antes da visita</div><div class="v">${fmt(t.antesVisita)}</div><div class="s">o BEES costuma não validar com pedido anterior à tarefa</div></div>
+    <div class="kpi"><div class="k">PDVs afetados</div><div class="v">${fmt(res.tot.pdvs)}</div><div class="s">em ${fmt(res.tot.setores)} setores · ${EST.sit === 'atrasadas' ? 'só atrasadas' : 'todas as situações'}</div></div>`;
+
+  // Por indicador: barra = todas as divergências, destaque = atrasadas.
+  const atras = EST.sit === 'atrasadas' ? res : divAtual('atrasadas');
+  const mx = Math.max(1, ...t.porInd);
+  let h = '<div class="grp">Desenvolvimento de Portfólio</div>';
+  INDICADORES.forEach((ind, i) => {
+    if (ind === 'Marketplace') h += '<div class="grp">Marketplace e Volume</div>';
+    const fe = atras.tot.porInd[i],
+      ab = t.porInd[i];
+    h += `<div class="bar${EST.ind === ind ? ' sel' : ''}" data-ind="${ind}" role="button" tabindex="0" aria-pressed="${EST.ind === ind}">
+      <span class="nm">${NOME_CURTO[ind]}</span>
+      <span class="tr"><i style="width:${(ab / mx) * 100}%"></i><b style="width:${(fe / mx) * 100}%"></b></span>
+      <span class="n">${fmt(fe)} <small>/ ${fmt(ab)}</small></span></div>`;
+  });
+  $('ind').innerHTML = h;
+
+  $('segSit').innerHTML = (['atrasadas', 'todas'] as const)
+    .map((s) => `<button type="button" data-sit="${s}" aria-pressed="${EST.sit === s}">${s === 'atrasadas' ? 'Só atrasadas' : 'Todas'}</button>`)
+    .join('');
+  renderDivTabela(res.linhas, res.tot.total);
+}
+
+const COLS_DIV = (): { k: string; l: string; c?: string; ind?: Indicador }[] => [
+  { k: 'setor', l: 'Setor', c: 'l fix' },
+  { k: 'rev', l: 'Revenda', c: 'l' },
+  { k: 'gv', l: 'GV' },
+  { k: 'nb', l: 'NB', c: 'l' },
+  { k: 'pdv', l: 'PDVs' },
+  ...INDICADORES.map((i) => ({ k: 'i' + INDICADORES.indexOf(i), l: NOME_CURTO[i], ind: i })),
+  { k: 'feitas', l: 'Tarefas' },
+  { k: 'atras', l: 'Atrasadas' },
+  { k: 'dias', l: 'Maior atraso' },
+];
+
+function valorDiv(l: LinhaDivSetor, k: string): number | string {
+  switch (k) {
+    case 'setor':
+      return +l.s.setor;
+    case 'gv':
+      return +l.s.gv;
+    case 'rev':
+      return l.s.revenda;
+    case 'nb':
+      return l.s.nb;
+    case 'pdv':
+      return l.pdvs;
+    case 'feitas':
+      return l.total;
+    case 'atras':
+      return l.atrasadas;
+    case 'dias':
+      return l.maxDias;
+    default:
+      return l.porInd[+k.slice(1)];
+  }
+}
+
+function renderDivTabela(linhasBase: LinhaDivSetor[], total: number) {
+  const { k, d } = EST.ordem;
+  const linhas = [...linhasBase].sort((a, b) => {
+    const va = valorDiv(a, k),
+      vb = valorDiv(b, k);
+    const c = typeof va === 'string' ? va.localeCompare(String(vb)) : va - (vb as number);
+    return c * d || +a.s.setor - +b.s.setor;
+  });
+  const cols = COLS_DIV();
+  const dim = (ind?: Indicador) => (ind && EST.ind !== 'todos' && EST.ind !== ind ? ' dim' : '');
+  const nDP = INDICADORES.filter((i) => i.startsWith('DP')).length;
+  let h = `<thead><tr><th colspan="5" class="grp"></th><th colspan="${nDP}" class="grp">Desenvolvimento de Portfólio</th><th colspan="${cols.length - 5 - nDP}" class="grp"></th></tr><tr>`;
+  for (const c of cols) {
+    const on = k === c.k;
+    h += `<th class="${c.c ?? ''}${on ? ' sorted' : ''}${dim(c.ind)}" data-k="${c.k}" aria-sort="${on ? (d > 0 ? 'ascending' : 'descending') : 'none'}">${c.l}${on ? (d > 0 ? ' ↑' : ' ↓') : ''}</th>`;
+  }
+  h += '</tr></thead><tbody>';
+  if (!linhas.length)
+    h += `<tr><td colspan="${cols.length}" class="l empty">Nenhuma divergência com esses filtros${EST.sit === 'atrasadas' ? ' (veja também "Todas")' : ''}.</td></tr>`;
+  for (const l of linhas) {
+    const s = l.s;
+    h += `<tr class="row${EST.aberto === s.id ? ' open' : ''}" data-id="${s.id}" tabindex="0">
+      <td class="l fix"><b>${s.setor}</b></td><td class="l"><span class="rev">${esc(s.revenda)}</span></td><td>${s.gv}</td>
+      <td class="l"><span class="nb" title="${esc(s.nb)}">${esc(s.nb) || '—'}</span></td><td>${fmt(l.pdvs)}</td>
+      ${l.porInd.map((n, i) => `<td class="${n ? 'hot' : 'z'}${dim(INDICADORES[i])}">${n ? `<span class="heat">${fmt(n)}</span>` : '·'}</td>`).join('')}
+      <td class="tot">${fmt(l.total)}</td><td>${l.atrasadas ? fmt(l.atrasadas) : '·'}</td><td>${l.maxDias > 0 ? `${l.maxDias} dias` : '—'}</td></tr>`;
+  }
+  h += `<tr class="sum"><td class="l fix">Total</td><td colspan="${cols.length - 3}"></td><td class="tot">${fmt(total)}</td><td></td></tr></tbody>`;
+  $('tbl').innerHTML = h;
+  const aberto = linhas.find((l) => l.s.id === EST.aberto);
+  $('drawer').innerHTML = aberto ? gavetaDiv(aberto) : '';
+}
+
+function gavetaDiv(l: LinhaDivSetor): string {
+  const a = DIV!,
+    s = l.s;
+  const ref = a.referencia[s.unb] ?? '';
+  let h = `<div class="drawer"><div class="top"><h3>Setor ${s.setor} · ${esc(s.revenda)}${s.nb ? ' · ' + esc(s.nb) : ''}</h3>
+    <div class="toolbar"><button class="btn small" data-acao="csv-setor" type="button">Baixar CSV do setor</button><button class="btn small" data-acao="link" type="button">Copiar link do setor</button><button class="btn small" data-acao="fechar" type="button">Fechar</button></div></div>
+    <div class="sub">${fmt(l.total)} tarefas abertas no BEES que o faturado comprova, em ${fmt(l.pdvs)} PDVs · export do BEES de ${dataBr(ref)}</div>`;
+  const porPdv = new Map<string, typeof l.itens>();
+  for (const d of l.itens) porPdv.set(d.pdv, [...(porPdv.get(d.pdv) ?? []), d]);
+  const pdvs = [...porPdv.values()].sort((x, y) => Math.max(...y.map((d) => d.dias)) - Math.max(...x.map((d) => d.dias)));
+  pdvs.forEach((lista, i) => {
+    const p = lista[0];
+    const at = lista.filter((d) => situacao(a, d) === 'atrasada').length;
+    h += `<details class="pdv"${i < 3 ? ' open' : ''}><summary><span class="nm">${esc(p.nome) || 'PDV'}</span>
+      <span class="cd">PDV ${p.pdv}</span><span class="chips">${at ? `<span class="pill p-N">${at} atrasadas</span>` : ''}
+      <span class="pill p-tot">${lista.length} tarefas</span></span></summary><div class="tl">`;
+    for (const d of lista) {
+      const st = situacao(a, d);
+      const quando = d.quando ? `meta em ${dataCurta(d.quando)}${st === 'antes' ? '' : ` · ${d.dias} ${Math.abs(d.dias) === 1 ? 'dia' : 'dias'} até o export`}` : '';
+      h += `<div class="trow"><div><span class="pill ${PILL_SIT[st]}">${NOME_SITUACAO[st]}</span><div class="ix">${NOME_CURTO[INDICADORES[d.ind]]} · ${d.md === 'M' ? 'Mensal' : 'Diária'}</div></div>
+        <div class="tx"><span class="tt">${esc(d.texto)}</span>${d.itens.length ? `<ul class="prova">${d.itens.map((it) => `<li>${provaLinha(it)}</li>`).join('')}</ul>` : ''}</div>
+        <div class="pg">${esc(d.prog)}<small class="muted">${d.visita ? `visita ${dataCurta(d.visita)}` : ''}${quando ? `<br>${quando}` : ''}</small></div></div>`;
+    }
+    h += '</div></details>';
+  });
+  return h + '</div>';
+}
+
+function csvDiv(linhas: LinhaDivSetor[]): string {
+  return csvTexto([CAB_DIV, ...linhasCsvDiv(DIV!, linhas, mesBr(DIV!.mes))]);
+}
+
+function tabelaDivTexto(sep: string): string {
+  const res = divAtual();
+  const q = (v: unknown) => (sep === ';' && /[;"\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+  const cab = ['Mês', 'Revenda', 'GV', 'Setor', 'NB', 'PDVs', ...INDICADORES, 'Tarefas', 'Atrasadas', 'Maior atraso (dias)'];
+  const linhas = res.linhas
+    .sort((a, b) => b.atrasadas - a.atrasadas || b.total - a.total)
+    .map((l) => [mesBr(DIV!.mes), l.s.revenda, l.s.gv, l.s.setor, l.s.nb, l.pdvs, ...l.porInd, l.total, l.atrasadas, l.maxDias].map(q).join(sep));
+  return [cab.map(q).join(sep), ...linhas].join('\n');
 }
 
 // ---------- exportação ----------
@@ -525,7 +731,7 @@ async function baixarCsvPdv(setores: LinhaSetor['s'][], nome: string, botao: HTM
 const nomeArquivo = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w-]+/g, '-').toLowerCase();
 
 // ---------- eventos ----------
-async function trocar(modo: TipoFechamento, chave: string) {
+async function trocar(modo: Modo, chave: string) {
   EST.modo = modo;
   EST.chave = chave;
   EST.aberto = null;
@@ -538,9 +744,10 @@ function ligarEventos() {
   $('segModo').addEventListener('click', (e) => {
     const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
     if (!b || b.disabled || b.dataset.modo === EST.modo) return;
-    const modo = b.dataset.modo as TipoFechamento;
-    const lista = modo === 'dia' ? INDICE!.dias : INDICE!.meses;
-    void trocar(modo, lista[0].chave);
+    const modo = b.dataset.modo as Modo;
+    // Mês e divergências compartilham a chave (AAAA-MM): mantém o mês escolhido quando dá.
+    const lista = listaDe(modo);
+    void trocar(modo, lista.some((x) => x.chave === EST.chave) ? EST.chave : lista[0].chave);
   });
   $('selDia').addEventListener('change', (e) => void trocar(EST.modo, (e.target as HTMLSelectElement).value));
   $('segRev').addEventListener('click', (e) => {
@@ -603,6 +810,9 @@ function ligarEventos() {
     if (acao === 'fechar') {
       EST.aberto = null;
       render();
+    } else if (acao === 'csv-setor' && EST.modo === 'div') {
+      const l = divAtual().linhas.find((x) => x.s.id === EST.aberto);
+      if (l) baixar(nomeArquivo(`divergencias-bees-${DIV!.mes}-${l.s.revenda}-setor-${l.s.setor}`) + '.csv', csvDiv([l]));
     } else if (acao === 'csv-setor') {
       const s = F!.setores.find((x) => x.id === EST.aberto);
       const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button')!;
@@ -611,14 +821,33 @@ function ligarEventos() {
       void copiar(location.href, 'Link do setor copiado. Envie para o RN.');
     }
   });
-  $('bCsv').addEventListener('click', () => baixar(`tasks-compra-${F!.tipo}-${F!.chave}.csv`, tabelaTexto(';')));
+  $('segSit').addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
+    if (!b || b.dataset.sit === EST.sit) return;
+    EST.sit = b.dataset.sit as Situacao;
+    render();
+  });
+  $('bCsv').addEventListener('click', () =>
+    EST.modo === 'div'
+      ? baixar(`divergencias-bees-${DIV!.mes}-por-setor.csv`, tabelaDivTexto(';'))
+      : baixar(`tasks-compra-${F!.tipo}-${F!.chave}.csv`, tabelaTexto(';')),
+  );
   $('bCsvPdv').addEventListener('click', (e) => {
+    if (EST.modo === 'div') {
+      const res = divAtual();
+      if (!res.linhas.length) return toast('Nenhuma divergência com esses filtros.');
+      const rev = EST.rev === 'todas' ? 'todas-revendas' : EST.rev;
+      baixar(nomeArquivo(`divergencias-bees-${DIV!.mes}-${rev}-${EST.sit}`) + '.csv', csvDiv(res.linhas));
+      return toast(`${fmt(res.tot.total)} tarefas exportadas.`);
+    }
     const setores = calcular(F!, EST).linhas.map((l) => l.s);
     if (!setores.length) return toast('Nenhum setor com esses filtros.');
     const rev = EST.rev === 'todas' ? 'todas-revendas' : EST.rev;
     void baixarCsvPdv(setores, nomeArquivo(`tasks-pdv-${F!.tipo}-${F!.chave}-${rev}`) + '.csv', e.currentTarget as HTMLButtonElement);
   });
-  $('bCopy').addEventListener('click', () => void copiar(tabelaTexto('\t'), 'Tabela copiada. Cole no Excel.'));
+  $('bCopy').addEventListener('click', () =>
+    void copiar(EST.modo === 'div' ? tabelaDivTexto('\t') : tabelaTexto('\t'), 'Tabela copiada. Cole no Excel.'),
+  );
   $('bRules').addEventListener('click', () => {
     const c = $('rulesCard');
     c.hidden = !c.hidden;
@@ -633,7 +862,7 @@ async function iniciar() {
     INDICE.dias ??= [];
     INDICE.meses ??= [];
     if (!INDICE.dias.length && !INDICE.meses.length) throw new Error('Nenhum fechamento publicado ainda.');
-    if (!listaDoModo().length) EST.modo = EST.modo === 'dia' ? 'mes' : 'dia';
+    if (!listaDoModo().length) EST.modo = INDICE.dias.length ? 'dia' : 'mes';
     if (!listaDoModo().some((d) => d.chave === EST.chave)) EST.chave = listaDoModo()[0].chave;
     await carregar(EST.modo, EST.chave);
     renderControles();

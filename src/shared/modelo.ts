@@ -123,6 +123,43 @@ export interface DetalheSetor {
 /** Nome do arquivo de detalhe de um setor ("747530|403" → "747530-403"). */
 export const arquivoSetor = (setorId: string) => setorId.replace('|', '-');
 
+/**
+ * Divergência: tarefa ainda ABERTA no BEES que o faturado do mês já comprova como feita.
+ * É a lista para cobrar a validação (ou achar regra/cadastro errado).
+ */
+export interface Divergencia {
+  setorId: string;
+  pdv: string;
+  nome: string;
+  /** Índice em INDICADORES. */
+  ind: number;
+  md: 'M' | 'D';
+  texto: string;
+  /** Progresso pelo faturado (ex.: "3 / 2 cx"). */
+  prog: string;
+  /** Entrega da nota que completou a meta, AAAA-MM-DD. */
+  quando: string;
+  /** Dias entre essa entrega e a data de referência do export do BEES (negativo = entregue depois do export). */
+  dias: number;
+  /** Só fecha com pedidos digitados ANTES da visita da tarefa: o BEES costuma não considerar essas compras. */
+  antesVisita: boolean;
+  /** Data da visita da tarefa no BEES. */
+  visita: string;
+  itens: ItemProva[];
+}
+
+export interface ArquivoDivergencias {
+  versao: number;
+  /** AAAA-MM */
+  mes: string;
+  geradoEm: string;
+  /** A partir de quantos dias depois da entrega a falta de validação é considerada atraso. */
+  tolerancia: number;
+  /** UNB → data de referência do export de tarefas (última validação registrada pelo BEES). */
+  referencia: Record<string, string>;
+  linhas: Divergencia[];
+}
+
 export interface IndiceDia {
   /** AAAA-MM-DD (dia) ou AAAA-MM (mês). */
   chave: string;
@@ -137,4 +174,6 @@ export interface Indice {
   atualizadoEm: string;
   dias: IndiceDia[];
   meses: IndiceDia[];
+  /** Meses que têm arquivo de divergências (data/divergencias/AAAA-MM.json). */
+  divergencias?: { chave: string; total: number; atrasadas: number }[];
 }

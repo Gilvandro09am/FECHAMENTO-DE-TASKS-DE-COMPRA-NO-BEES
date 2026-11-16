@@ -99,6 +99,10 @@ export interface Resultado {
   itens: ItemPedido[];
   /** Linhas do faturado anterior ao dia que bateram (acumulado da vespertina). */
   itensAntes?: ItemPedido[];
+  /** Data (pedido ou entrega da nota) em que a meta foi atingida, AAAA-MM-DD. Só nas feitas. */
+  quando?: string;
+  /** Mesma data contando só pedidos digitados a partir da visita da tarefa ('' = só fecha com compras anteriores). */
+  quandoAposVisita?: string;
 }
 
 export interface OpcoesMes {

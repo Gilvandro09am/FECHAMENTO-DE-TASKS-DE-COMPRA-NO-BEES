@@ -41,4 +41,9 @@ export const CONFIG = {
   diasNoHistorico: 62,
   /** Quantos fechamentos de mês manter publicados. */
   mesesNoHistorico: 12,
+  /**
+   * Divergências: tarefa aberta no BEES cuja nota foi entregue há pelo menos estes dias (contados até a última
+   * validação que o export do BEES traz) é "atrasada" — já deveria estar validada.
+   */
+  toleranciaDivergenciaDias: 2,
 };

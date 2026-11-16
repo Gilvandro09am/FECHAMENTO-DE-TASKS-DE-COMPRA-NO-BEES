@@ -52,6 +52,17 @@ function progresso(regra: Regra, hit: ItemPedido[]): number {
   }
 }
 
+/** Data do pedido (ou da entrega da nota) que completou a meta: soma as compras em ordem de data. */
+export function dataDaMeta(regra: Regra, itens: ItemPedido[], meta: number): string {
+  const data = (o: ItemPedido) => o.dataFat ?? o.dataEntrada;
+  const ord = [...itens].sort((a, b) => data(a).localeCompare(data(b)));
+  for (let i = 0; i < ord.length; i++) {
+    if (i + 1 < ord.length && data(ord[i + 1]) === data(ord[i])) continue; // fecha o dia inteiro
+    if (progresso(regra, ord.slice(0, i + 1)) >= meta) return data(ord[i]);
+  }
+  return '';
+}
+
 /**
  * Mede o progresso da tarefa e define Feita / Parcial / Não feita.
  * `antes` = o que o PDV já tinha comprado no mês (faturado), somado ao que comprou agora.
@@ -70,6 +81,12 @@ function medir(r: Resultado, linhas: ItemPedido[], antes: ItemPedido[], meta: nu
   r.itensAntes = hitAntes;
   if (hitAntes.length && r.antes >= r.meta) r.status = 'Já validada';
   else r.status = hit.length && r.prog >= r.meta ? 'Feita no dia' : hit.length ? 'Parcial' : 'Não feita';
+  if (r.status === 'Feita no dia') {
+    const todas = [...hitAntes, ...hit];
+    r.quando = dataDaMeta(regra, todas, r.meta);
+    const v = r.task.visita;
+    r.quandoAposVisita = v ? dataDaMeta(regra, todas.filter((o) => o.dataEntrada >= v), r.meta) : r.quando;
+  }
 }
 
 /**

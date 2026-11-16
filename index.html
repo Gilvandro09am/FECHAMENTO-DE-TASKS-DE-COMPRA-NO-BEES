@@ -62,6 +62,7 @@
         <div class="hd">
           <h2>Por setor</h2>
           <div class="toolbar">
+            <div class="seg" id="segSit" role="group" aria-label="Situação" hidden></div>
             <button class="btn" id="bCsvPdv" type="button" title="Uma linha por tarefa de cada PDV, com o texto da tarefa e o produto vendido">Baixar CSV por PDV</button>
             <button class="btn" id="bCsv" type="button" title="Uma linha por setor">Baixar CSV por setor</button>
             <button class="btn" id="bCopy" type="button">Copiar tabela</button>
@@ -110,6 +111,19 @@
             <dd>Vale qualquer nota com entrega no mês, como o BEES valida.</dd>
             <dt>% de conclusão</dt>
             <dd>Concluídas ÷ todas as tarefas verificáveis do setor (com ou sem faturamento).</dd>
+          </dl>
+          <h3>Divergências · abertas no BEES</h3>
+          <dl>
+            <dt>O que entra</dt>
+            <dd>Tarefas que continuam abertas no export do BEES, mas que o faturado do mês já comprova pelas mesmas regras do painel do mês. Cada uma mostra as notas fiscais que a fecham.</dd>
+            <dt>Atrasada</dt>
+            <dd>O pedido foi digitado a partir da visita da tarefa e a nota que completou a meta foi entregue 2 ou mais dias antes da última validação registrada no export do BEES da revenda. Já deveria estar validada.</dd>
+            <dt>Recente</dt>
+            <dd>Entregue há menos de 2 dias do export (ou depois dele): o BEES ainda pode validar.</dd>
+            <dt>Compra antes da visita</dt>
+            <dd>A meta só fecha com pedidos anteriores à visita da tarefa. Nas tarefas validadas, o BEES quase sempre usa compras a partir da visita, então essas ficam à parte.</dd>
+            <dt>Fora da lista</dt>
+            <dd>"Concluir a missão" e "Desafio disponível no BEES": o BEES valida por etapas ou por adesão no app, não só pela compra.</dd>
           </dl>
           <h3>Para os dois</h3>
           <dl>

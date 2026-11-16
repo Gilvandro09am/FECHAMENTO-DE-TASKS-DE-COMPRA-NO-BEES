@@ -6,6 +6,10 @@ Estiva e Caculé** fez, em dois painéis:
 
 - **Vespertina · pedidos do dia** — o fechamento da tarde: quais tarefas os pedidos digitados hoje fecharam.
 - **Mês · faturado** — tarefas concluídas no mês: validadas no BEES + as que o faturado/entregue já cobre.
+- **Divergências · abertas no BEES** — tarefas que seguem abertas no BEES, mas que o faturado já comprova, com a
+  nota fiscal de cada uma. Separa **atrasadas** (pedido a partir da visita, nota entregue há 2+ dias antes do
+  export do BEES: já deveriam estar validadas), **recentes** (o BEES ainda pode validar) e **compra antes da
+  visita** (o BEES costuma não considerar). Missões e desafios do BEES ficam fora.
 
 O analista roda o fechamento no VS Code e publica. RNs e GVs abrem o link
 <https://fechamento-de-tasks-de-compra-no-be.vercel.app> (acesso livre, sem senha) e veem o resultado, com
@@ -81,6 +85,10 @@ npm run fechamento -- --so-mes              # só o painel do mês
 npm run fechamento -- --sem-bloqueados      # não conta pedidos bloqueados
 npm run fechamento -- --so-mes --diagnostico   # lista as tarefas validadas pelo BEES que o motor não reconhece
 ```
+
+No fim do painel do mês, o terminal resume as **divergências** (tarefas abertas no BEES que o faturado comprova) e
+lista os textos mais frequentes entre as atrasadas. Se um texto aparece muito ali, confira se a regra está certa
+antes de cobrar a validação. A tolerância de dias fica em `src/pipeline/config.ts` (`toleranciaDivergenciaDias`).
 
 O `--diagnostico` grava `base/diagnostico-afericao.txt` (fora do Git) com cada texto de tarefa que o BEES validou
 e o motor não reconheceu pelo faturado, e o que o PDV comprou no mês — é o ponto de partida para ajustar uma regra.

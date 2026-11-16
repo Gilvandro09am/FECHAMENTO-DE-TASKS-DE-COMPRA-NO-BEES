@@ -28,6 +28,7 @@ import {
   lerFaturados,
   lerPedidos,
   lerTarefas,
+  montarDivergencias,
   montarFechamento,
   NAO_RECONHECIDA,
   type Cadastro,
@@ -135,7 +136,7 @@ function lerIndice(): Indice {
   const i = JSON.parse(fs.readFileSync(arq, 'utf8')) as Partial<Indice>;
   // Fechamentos de versões antigas do modelo não abrem no painel novo: saem do índice e da pasta.
   if (i.versao !== VERSAO_MODELO) {
-    for (const pasta of ['dias', 'meses']) fs.rmSync(path.join(CONFIG.pastaDados, pasta), { recursive: true, force: true });
+    for (const pasta of ['dias', 'meses', 'divergencias']) fs.rmSync(path.join(CONFIG.pastaDados, pasta), { recursive: true, force: true });
     return vazio;
   }
   return { ...vazio, ...i };
@@ -288,6 +289,40 @@ function fechamentoDia(
   console.log(cor.ok(`  ✔ Gravado ${gravar(f, indice)}`));
 }
 
+/** Tarefas abertas no BEES que o faturado já comprova: arquivo da aba "Divergências". */
+function gravarDivergencias(resultados: Resultado[], mes: string, cadastro: Cadastro, indice: Indice) {
+  const tol = CONFIG.toleranciaDivergenciaDias;
+  const d = montarDivergencias(resultados, { mes, tolerancia: tol, cadastro });
+  const dir = path.join(CONFIG.pastaDados, 'divergencias');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${mes}.json`), JSON.stringify(d));
+  const atrasadas = d.linhas.filter((l) => !l.antesVisita && l.dias >= tol).length;
+  const antes = d.linhas.filter((l) => l.antesVisita).length;
+  const lista = (indice.divergencias ?? []).filter((x) => x.chave !== mes);
+  lista.push({ chave: mes, total: d.linhas.length, atrasadas });
+  lista.sort((a, b) => b.chave.localeCompare(a.chave));
+  for (const velho of lista.splice(CONFIG.mesesNoHistorico)) fs.rmSync(path.join(dir, `${velho.chave}.json`), { force: true });
+  indice.divergencias = lista;
+
+  console.log(cor.forte('\n  ▸ Divergências — abertas no BEES, mas o faturado já comprova'));
+  const refs = Object.entries(d.referencia)
+    .map(([unb, data]) => `${NOME_REVENDA[unb] ?? unb} ${dataBr(data)}`)
+    .join(' · ');
+  console.log(`  Referência (última validação no export do BEES): ${refs}`);
+  console.log(
+    `  ${cor.forte(fmt(d.linhas.length))} tarefas · ${cor.aviso(fmt(atrasadas))} atrasadas (pedido após a visita, entregue há ${tol}+ dias)` +
+      ` · ${fmt(antes)} só com compra antes da visita`,
+  );
+  const porTexto = new Map<string, number>();
+  for (const l of d.linhas) if (!l.antesVisita && l.dias >= tol) porTexto.set(l.texto, (porTexto.get(l.texto) ?? 0) + 1);
+  const top = [...porTexto].sort((a, b) => b[1] - a[1]).slice(0, 8);
+  if (top.length) {
+    console.log('  Textos mais frequentes entre as atrasadas (confira se a regra está certa):');
+    for (const [t, n] of top) console.log(`    ${String(n).padStart(5)}× ${t.slice(0, 110)}`);
+  }
+  console.log(cor.ok(`  ✔ Gravado ${path.join('public', 'data', 'divergencias', `${mes}.json`)}`));
+}
+
 // ---------------------------------------------------------------------------
 // Mês (faturado)
 // ---------------------------------------------------------------------------
@@ -333,6 +368,7 @@ function fechamentoMes(
   });
   resumir(f, resultados);
   console.log(cor.ok(`  ✔ Gravado ${gravar(f, indice)}`));
+  gravarDivergencias(resultados, mes, cadastro, indice);
 }
 
 /**
