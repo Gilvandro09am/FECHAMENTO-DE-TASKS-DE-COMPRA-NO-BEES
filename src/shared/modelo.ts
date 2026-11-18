@@ -123,8 +123,11 @@ export const OPERACOES: { nome: string; revendas: string[] }[] = [
 ];
 export const operacaoDa = (revenda: string) => OPERACOES.find((o) => o.revendas.includes(revenda))?.nome ?? revenda;
 
-/** Chave do GV: o número se repete entre revendas (GV 2 de Sousa ≠ GV 2 de Brumado). */
-export const chaveGv = (s: { unb: string; gv: string }) => `${s.unb}|${s.gv}`;
+/**
+ * Chave do GV consolidada por operação: "Sousa|2" junta o GV 2 de Sousa e de Itaporanga;
+ * "Bahia|2" junta Brumado e Barra da Estiva. O GV 2 de Sousa continua separado do GV 2 da Bahia.
+ */
+export const chaveGv = (s: { revenda: string; gv: string }) => `${operacaoDa(s.revenda)}|${s.gv}`;
 
 /** Nome do arquivo de detalhe de um setor ("747530|403" → "747530-403"). */
 export const arquivoSetor = (setorId: string) => setorId.replace('|', '-');

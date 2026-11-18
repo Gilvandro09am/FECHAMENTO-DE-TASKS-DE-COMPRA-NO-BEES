@@ -19,7 +19,7 @@ export interface Filtros {
   /** 'todas' ou nome da operação (Bahia, Patos, Sousa, Guarabira). */
   op?: string;
   rev: string; // 'todas' ou nome da revenda
-  gv: string; // 'todos' ou "unb|gv" (o número do GV se repete entre revendas)
+  gv: string; // 'todos' ou "operação|gv" (GV consolidado por operação, ex.: "Sousa|2" = Sousa + Itaporanga)
   ind: Indicador | 'todos';
   busca: string;
 }

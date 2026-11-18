@@ -171,8 +171,8 @@ Unidades que aparecem nos pedidos sem estar em `REVENDAS` são ignoradas e lista
 
 Depois, inclua o `nome` da revenda na operação certa em `OPERACOES` (`src/shared/modelo.ts`), que alimenta o filtro
 **Operação** do painel: Bahia (Brumado, Barra da Estiva, Caculé), Patos (Patos, Sumé), Sousa (Sousa, Itaporanga) e
-Guarabira. Revenda fora da lista aparece no filtro com o próprio nome. O filtro de **GV** mostra "Revenda · GV n",
-porque o número do GV se repete entre revendas.
+Guarabira. Revenda fora da lista aparece no filtro com o próprio nome. O filtro de **GV** é consolidado por operação ("Sousa · GV 2" = GV 2 de Sousa + Itaporanga),
+sem misturar GVs de mesmo número de operações diferentes.
 
 ## Regras de negócio
 

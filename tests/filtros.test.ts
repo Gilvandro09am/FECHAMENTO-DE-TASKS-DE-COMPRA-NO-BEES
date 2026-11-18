@@ -28,8 +28,11 @@ describe('filtros', () => {
     expect(ids({ ...base, op: 'Guarabira' })).toEqual(['701']);
   });
 
-  it('GV 2 de Sousa não mistura com o GV 2 de Itaporanga e Brumado', () => {
-    expect(ids({ ...base, gv: '487570|2' })).toEqual(['201']);
-    expect(ids({ ...base, gv: '1044303|2' })).toEqual(['203']);
+  it('GV consolidado por operação: GV 2 de Sousa junta Sousa e Itaporanga, sem misturar com o GV 2 da Bahia', () => {
+    expect(ids({ ...base, gv: 'Sousa|2' })).toEqual(['201', '202']);
+    expect(ids({ ...base, gv: 'Bahia|2' })).toEqual(['203']);
+    expect(ids({ ...base, gv: 'Bahia|1' })).toEqual(['101', '102']);
+    // Com a revenda escolhida, o GV consolidado fica só nela.
+    expect(ids({ ...base, rev: 'Itaporanga', gv: 'Sousa|2' })).toEqual(['202']);
   });
 });

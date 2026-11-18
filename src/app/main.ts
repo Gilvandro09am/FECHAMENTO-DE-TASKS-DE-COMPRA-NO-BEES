@@ -271,26 +271,29 @@ function renderControles() {
     .map((r) => `<button type="button" data-rev="${esc(r)}" aria-pressed="${EST.rev === r}">${r === 'todas' ? 'Todas' : esc(r)}</button>`)
     .join('');
 
-  // GV: o número se repete entre revendas, então cada opção é "Revenda · GV n".
+  // GV consolidado por operação: "Sousa · GV 2" junta o GV 2 de Sousa e de Itaporanga.
   const doFiltro = F!.setores.filter((s) => revs.includes(s.revenda) && (EST.rev === 'todas' || s.revenda === EST.rev));
   const gvs = [...new Map(doFiltro.map((s) => [chaveGv(s), s])).values()].sort(
-    (a, b) => a.revenda.localeCompare(b.revenda) || +a.gv - +b.gv,
+    (a, b) => operacaoDa(a.revenda).localeCompare(operacaoDa(b.revenda)) || +a.gv - +b.gv,
   );
-  // Link antigo com só o número do GV ("gv=2"): troca pela chave quando só uma revenda tem esse GV.
-  if (EST.gv !== 'todos' && !EST.gv.includes('|')) {
-    const achados = gvs.filter((s) => s.gv === EST.gv);
-    EST.gv = achados.length === 1 ? chaveGv(achados[0]) : 'todos';
+  // Links antigos: "gv=2" (só o número) ou "gv=<unb>|2" (por revenda) → chave da operação.
+  if (EST.gv !== 'todos' && !gvs.some((s) => chaveGv(s) === EST.gv)) {
+    const [a, b] = EST.gv.includes('|') ? EST.gv.split('|') : ['', EST.gv];
+    const achados = [...new Set(gvs.filter((s) => s.gv === b && (!a || s.unb === a)).map(chaveGv))];
+    EST.gv = achados.length === 1 ? achados[0] : 'todos';
   }
-  if (EST.gv !== 'todos' && !gvs.some((s) => chaveGv(s) === EST.gv)) EST.gv = 'todos';
-  const umaRev = new Set(gvs.map((s) => s.revenda)).size === 1;
-  const setoresDoGv = (s: (typeof gvs)[number]) => doFiltro.filter((x) => chaveGv(x) === chaveGv(s)).length;
+  const umaOp = new Set(gvs.map((s) => operacaoDa(s.revenda))).size === 1;
+  const setoresDoGv = (s: (typeof gvs)[number]) => doFiltro.filter((x) => chaveGv(x) === chaveGv(s));
   $('selGv').innerHTML =
     `<option value="todos">Todos</option>` +
     gvs
-      .map(
-        (s) =>
-          `<option value="${chaveGv(s)}">${umaRev ? '' : esc(s.revenda) + ' · '}GV ${s.gv} (${setoresDoGv(s)} ${setoresDoGv(s) === 1 ? 'setor' : 'setores'})</option>`,
-      )
+      .map((s) => {
+        const doGv = setoresDoGv(s);
+        const revsGv = [...new Set(doGv.map((x) => x.revenda))];
+        // Quando junta revendas, mostra quais: "Sousa · GV 2 — Sousa + Itaporanga (7 setores)".
+        const juntas = revsGv.length > 1 ? ` — ${revsGv.map(esc).join(' + ')}` : '';
+        return `<option value="${chaveGv(s)}">${umaOp ? '' : esc(operacaoDa(s.revenda)) + ' · '}GV ${s.gv}${juntas} (${doGv.length} ${doGv.length === 1 ? 'setor' : 'setores'})</option>`;
+      })
       .join('');
   $<HTMLSelectElement>('selGv').value = EST.gv;
 
