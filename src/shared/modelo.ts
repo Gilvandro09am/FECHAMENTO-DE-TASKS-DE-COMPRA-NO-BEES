@@ -111,6 +111,21 @@ export interface DetalheSetor {
   textos: string[];
 }
 
+/**
+ * Operações: consolidação de revendas para o filtro do painel.
+ * Revenda nova? Inclua o nome curto (o mesmo de src/pipeline/config.ts) na operação certa.
+ */
+export const OPERACOES: { nome: string; revendas: string[] }[] = [
+  { nome: 'Bahia', revendas: ['Brumado', 'Barra da Estiva', 'Caculé'] },
+  { nome: 'Patos', revendas: ['Patos', 'Sumé'] },
+  { nome: 'Sousa', revendas: ['Sousa', 'Itaporanga'] },
+  { nome: 'Guarabira', revendas: ['Guarabira'] },
+];
+export const operacaoDa = (revenda: string) => OPERACOES.find((o) => o.revendas.includes(revenda))?.nome ?? revenda;
+
+/** Chave do GV: o número se repete entre revendas (GV 2 de Sousa ≠ GV 2 de Brumado). */
+export const chaveGv = (s: { unb: string; gv: string }) => `${s.unb}|${s.gv}`;
+
 /** Nome do arquivo de detalhe de um setor ("747530|403" → "747530-403"). */
 export const arquivoSetor = (setorId: string) => setorId.replace('|', '-');
 

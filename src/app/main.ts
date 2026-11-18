@@ -4,6 +4,9 @@ import {
   arquivoSetor,
   INDICADORES,
   NOME_CURTO,
+  OPERACOES,
+  chaveGv,
+  operacaoDa,
   STATUS_NOME,
   VERSAO_MODELO,
   type DetalheSetor,
@@ -123,6 +126,7 @@ const EST: Estado = {
   modo: url.get('m') === 'mes' ? 'mes' : url.get('m') === 'div' ? 'div' : 'dia',
   sit: url.get('sit') === 'todas' ? 'todas' : 'atrasadas',
   chave: url.get('dia') ?? url.get('mes') ?? '',
+  op: url.get('op') ?? 'todas',
   rev: url.get('rev') ?? 'todas',
   gv: url.get('gv') ?? 'todos',
   ind: (INDICADORES as readonly string[]).includes(url.get('ind') ?? '') ? (url.get('ind') as Indicador) : 'todos',
@@ -140,6 +144,7 @@ function gravarUrl() {
   if (EST.modo !== 'dia') p.set('m', EST.modo);
   if (EST.modo === 'div' && EST.sit === 'todas') p.set('sit', 'todas');
   if (EST.chave && EST.chave !== listaDoModo()[0]?.chave) p.set(EST.modo === 'dia' ? 'dia' : 'mes', EST.chave);
+  if (EST.op && EST.op !== 'todas') p.set('op', EST.op);
   if (EST.rev !== 'todas') p.set('rev', EST.rev);
   if (EST.gv !== 'todos') p.set('gv', EST.gv);
   if (EST.ind !== 'todos') p.set('ind', EST.ind);
@@ -248,17 +253,45 @@ function renderControles() {
   $<HTMLSelectElement>('selDia').value = EST.chave;
   $('lblDia').textContent = EST.modo === 'dia' ? 'Fechamento' : 'Mês';
 
-  const revs = revendas();
+  // Operação → revendas da operação → GVs das revendas mostradas.
+  const todasRevs = revendas();
+  const ops = OPERACOES.filter((o) => o.revendas.some((r) => todasRevs.includes(r)));
+  const semOp = todasRevs.filter((r) => !OPERACOES.some((o) => o.revendas.includes(r)));
+  const nomesOp = [...ops.map((o) => o.nome), ...semOp];
+  if (EST.op !== 'todas' && !nomesOp.includes(EST.op!)) EST.op = 'todas';
+  $('segOp').innerHTML = ['todas', ...nomesOp]
+    .map((o) => `<button type="button" data-op="${esc(o)}" aria-pressed="${EST.op === o}">${o === 'todas' ? 'Todas' : esc(o)}</button>`)
+    .join('');
+
+  const revs = todasRevs.filter((r) => EST.op === 'todas' || operacaoDa(r) === EST.op);
   if (EST.rev !== 'todas' && !revs.includes(EST.rev)) EST.rev = 'todas';
+  // Operação com uma revenda só (Guarabira): o filtro de revenda não tem o que escolher.
+  $('ctlRev').hidden = revs.length < 2;
   $('segRev').innerHTML = ['todas', ...revs]
     .map((r) => `<button type="button" data-rev="${esc(r)}" aria-pressed="${EST.rev === r}">${r === 'todas' ? 'Todas' : esc(r)}</button>`)
     .join('');
 
-  const gvs = [...new Set(F!.setores.filter((s) => EST.rev === 'todas' || s.revenda === EST.rev).map((s) => s.gv))].sort(
-    (a, b) => +a - +b,
+  // GV: o número se repete entre revendas, então cada opção é "Revenda · GV n".
+  const doFiltro = F!.setores.filter((s) => revs.includes(s.revenda) && (EST.rev === 'todas' || s.revenda === EST.rev));
+  const gvs = [...new Map(doFiltro.map((s) => [chaveGv(s), s])).values()].sort(
+    (a, b) => a.revenda.localeCompare(b.revenda) || +a.gv - +b.gv,
   );
-  if (EST.gv !== 'todos' && !gvs.includes(EST.gv)) EST.gv = 'todos';
-  $('selGv').innerHTML = `<option value="todos">Todos</option>` + gvs.map((g) => `<option value="${g}">GV ${g}</option>`).join('');
+  // Link antigo com só o número do GV ("gv=2"): troca pela chave quando só uma revenda tem esse GV.
+  if (EST.gv !== 'todos' && !EST.gv.includes('|')) {
+    const achados = gvs.filter((s) => s.gv === EST.gv);
+    EST.gv = achados.length === 1 ? chaveGv(achados[0]) : 'todos';
+  }
+  if (EST.gv !== 'todos' && !gvs.some((s) => chaveGv(s) === EST.gv)) EST.gv = 'todos';
+  const umaRev = new Set(gvs.map((s) => s.revenda)).size === 1;
+  const setoresDoGv = (s: (typeof gvs)[number]) => doFiltro.filter((x) => chaveGv(x) === chaveGv(s)).length;
+  $('selGv').innerHTML =
+    `<option value="todos">Todos</option>` +
+    gvs
+      .map(
+        (s) =>
+          `<option value="${chaveGv(s)}">${umaRev ? '' : esc(s.revenda) + ' · '}GV ${s.gv} (${setoresDoGv(s)} ${setoresDoGv(s) === 1 ? 'setor' : 'setores'})</option>`,
+      )
+      .join('');
   $<HTMLSelectElement>('selGv').value = EST.gv;
 
   $('selInd').innerHTML =
@@ -754,10 +787,21 @@ function ligarEventos() {
     void trocar(modo, lista.some((x) => x.chave === EST.chave) ? EST.chave : lista[0].chave);
   });
   $('selDia').addEventListener('change', (e) => void trocar(EST.modo, (e.target as HTMLSelectElement).value));
+  $('segOp').addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
+    if (!b || b.dataset.op === EST.op) return;
+    EST.op = b.dataset.op!;
+    EST.rev = 'todas';
+    EST.gv = 'todos';
+    EST.aberto = null;
+    renderControles();
+    render();
+  });
   $('segRev').addEventListener('click', (e) => {
     const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
     if (!b) return;
     EST.rev = b.dataset.rev!;
+    EST.gv = 'todos';
     EST.aberto = null;
     renderControles();
     render();
@@ -840,13 +884,13 @@ function ligarEventos() {
     if (EST.modo === 'div') {
       const res = divAtual();
       if (!res.linhas.length) return toast('Nenhuma divergência com esses filtros.');
-      const rev = EST.rev === 'todas' ? 'todas-revendas' : EST.rev;
+      const rev = EST.rev !== 'todas' ? EST.rev : EST.op !== 'todas' ? `operacao-${EST.op}` : 'todas-revendas';
       baixar(nomeArquivo(`divergencias-bees-${DIV!.mes}-${rev}-${EST.sit}`) + '.csv', csvDiv(res.linhas));
       return toast(`${fmt(res.tot.total)} tarefas exportadas.`);
     }
     const setores = calcular(F!, EST).linhas.map((l) => l.s);
     if (!setores.length) return toast('Nenhum setor com esses filtros.');
-    const rev = EST.rev === 'todas' ? 'todas-revendas' : EST.rev;
+    const rev = EST.rev !== 'todas' ? EST.rev : EST.op !== 'todas' ? `operacao-${EST.op}` : 'todas-revendas';
     void baixarCsvPdv(setores, nomeArquivo(`tasks-pdv-${F!.tipo}-${F!.chave}-${rev}`) + '.csv', e.currentTarget as HTMLButtonElement);
   });
   $('bCopy').addEventListener('click', () =>

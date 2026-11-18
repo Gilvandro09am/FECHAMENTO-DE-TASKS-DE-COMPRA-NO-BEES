@@ -169,6 +169,11 @@ Em `src/pipeline/config.ts`, na lista `REVENDAS`, acrescente `{ unb, nome, filia
 
 Unidades que aparecem nos pedidos sem estar em `REVENDAS` são ignoradas e listadas no terminal.
 
+Depois, inclua o `nome` da revenda na operação certa em `OPERACOES` (`src/shared/modelo.ts`), que alimenta o filtro
+**Operação** do painel: Bahia (Brumado, Barra da Estiva, Caculé), Patos (Patos, Sumé), Sousa (Sousa, Itaporanga) e
+Guarabira. Revenda fora da lista aparece no filtro com o próprio nome. O filtro de **GV** mostra "Revenda · GV n",
+porque o número do GV se repete entre revendas.
+
 ## Regras de negócio
 
 - **Escopo:** Desenvolvimento de Portfólio (Cerveja, LN HE, NAB, Match, SKU PDV, Outras) e Marketplace (uma coluna:

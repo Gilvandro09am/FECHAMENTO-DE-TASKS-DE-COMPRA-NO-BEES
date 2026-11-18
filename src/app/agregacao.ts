@@ -10,12 +10,16 @@ import {
   type Fechamento,
   type Indicador,
   type SetorFechamento,
+  chaveGv,
+  operacaoDa,
 } from '../shared/modelo';
 import { norm } from '../engine/texto';
 
 export interface Filtros {
+  /** 'todas' ou nome da operação (Bahia, Patos, Sousa, Guarabira). */
+  op?: string;
   rev: string; // 'todas' ou nome da revenda
-  gv: string; // 'todos' ou número
+  gv: string; // 'todos' ou "unb|gv" (o número do GV se repete entre revendas)
   ind: Indicador | 'todos';
   busca: string;
 }
@@ -61,8 +65,9 @@ export function setoresFiltrados(f: Fechamento, filtros: Filtros): SetorFechamen
   const q = norm(filtros.busca);
   return f.setores.filter(
     (s) =>
+      (!filtros.op || filtros.op === 'todas' || operacaoDa(s.revenda) === filtros.op) &&
       (filtros.rev === 'todas' || s.revenda === filtros.rev) &&
-      (filtros.gv === 'todos' || s.gv === filtros.gv) &&
+      (filtros.gv === 'todos' || chaveGv(s) === filtros.gv) &&
       (!q || s.setor.startsWith(q) || norm(s.nb).includes(q)),
   );
 }

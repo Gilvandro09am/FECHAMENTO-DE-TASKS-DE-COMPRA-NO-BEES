@@ -125,8 +125,10 @@ select.dark { background: #22303e; color: var(--band-ink); border-color: #3a4654
 .seg button:disabled { opacity: 0.4; cursor: not-allowed; }
 /* Revendas: no celular rola para o lado dentro da faixa, sem alargar a página */
 .ctl:has(#segRev) { max-width: 100%; }
-#segRev { max-width: 100%; overflow-x: auto; }
-#segRev button { white-space: nowrap; flex: none; }
+#segRev, #segOp { max-width: 100%; overflow-x: auto; }
+#segRev button, #segOp button { white-space: nowrap; flex: none; }
+.ctl:has(#segOp) { max-width: 100%; }
+.ctl[hidden] { display: none; }
 /* Abas do painel (dia / mês) dentro da faixa escura */
 .seg.tabs { margin-bottom: 14px; background: transparent; border-color: #3a4654; max-width: 100%; overflow-x: auto; }
 .seg.tabs button { color: var(--band-muted); padding: 8px 14px; white-space: nowrap; }
