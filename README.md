@@ -1,11 +1,12 @@
 # Painel de Tasks de Compra
 
-Mostra quantas tasks de compra do BEES Force (Desenvolvimento de Portfólio — Cerveja, LN, LN High End, NAB, Match,
-SKU PDV —, Marketplace e Volume) cada setor de **Patos, Sumé, Guarabira, Sousa, Itaporanga, Brumado, Barra da
+Mostra quantas tasks de compra do BEES Force (Desenvolvimento de Portfólio — Cerveja, LN HE, NAB, Match, SKU PDV,
+Outras — e Marketplace; Volume não é acompanhado) cada setor de **Patos, Sumé, Guarabira, Sousa, Itaporanga, Brumado, Barra da
 Estiva e Caculé** fez, em dois painéis:
 
 - **Vespertina · pedidos do dia** — o fechamento da tarde: quais tarefas os pedidos digitados hoje fecharam.
-- **Mês · faturado** — tarefas concluídas no mês: validadas no BEES + as que o faturado/entregue já cobre.
+- **Mês · faturado** — tarefas **validadas no BEES** no mês (só a validação oficial conclui), cada uma com as
+  notas que a comprovam; as abertas que o faturado já comprova aparecem como "a validar".
 - **Divergências · abertas no BEES** — tarefas que seguem abertas no BEES, mas que o faturado já comprova, com a
   nota fiscal de cada uma. Separa **atrasadas** (pedido a partir da visita, nota entregue há 2+ dias antes do
   export do BEES: já deveriam estar validadas), **recentes** (o BEES ainda pode validar) e **compra antes da
@@ -170,12 +171,14 @@ Unidades que aparecem nos pedidos sem estar em `REVENDAS` são ignoradas e lista
 
 ## Regras de negócio
 
-- **Escopo:** Desenvolvimento de Portfólio (Cerveja, LN, LN High End, NAB, Match, SKU PDV, Marketplace, Outras),
-  Marketplace e Volume.
+- **Escopo:** Desenvolvimento de Portfólio (Cerveja, LN HE, NAB, Match, SKU PDV, Outras) e Marketplace (uma coluna:
+  o cluster Marketplace + o Portfólio de categoria Marketplace). Tarefas de Volume ficam fora.
 - **SKU PDV:** só as tarefas "N SKUs distintos de CERVEJA / NAB / MARKETPLACE / MATCH" (de Portfólio ou
   Marketplace). Outros "SKUs distintos" (H2OH, RGB, Minalba…) ficam no indicador da categoria.
-- **LN:** tarefas de Portfólio com "Long Neck" ou "LN" no texto.
-- **LN High End:** LN de Corona (Extra e Cero/Zero), Michelob, Stella e Stella Pure Gold, ou do grupo HE/Premium.
+- **LN HE (uma cesta só):** as tarefas do export de Long Neck do BEES (`.xlsx` com "LongNeck" no nome, ex.:
+  `fLongNeck202611.xlsx`) — Corona, Corona Cero, Stella, Pure Gold, Michelob, Spaten, "+LN Long Necks HE", inclusive
+  as de venda de LN. Long neck fora da lista fica na categoria (Cerveja, Match…). Sem o arquivo, a LN HE sai pelo
+  texto (long neck de Corona, Michelob, Stella, Spaten ou grupo HE/Premium).
   Na validação pelo produto, Spaten só conta quando o texto da tarefa cita Spaten.
 
 **Vespertina (dia)**
@@ -190,9 +193,10 @@ Unidades que aparecem nos pedidos sem estar em `REVENDAS` são ignoradas e lista
 **Mês (faturado)**
 - **Notas que contam:** operação 1 (venda) e 2 (bonificação), com **data de entrega** (coluna "Emissao") no mês das
   tarefas. Devolvidas (D) e canceladas (C) nunca contam; operações 5, 9, 108 e outras também não.
-- **Concluída:** validada no BEES, ou faturado do mês ≥ meta cheia da tarefa (mensal ou diária: vale qualquer
-  entrega no mês, como o BEES valida).
-- **% de conclusão:** concluídas ÷ todas as tarefas verificáveis do setor.
+- **Validada:** só a validação do BEES conclui. O faturado comprova cada validada (notas que batem com a tarefa).
+- **A validar:** aberta no BEES, mas o faturado do mês ≥ meta cheia da tarefa (mensal ou diária: vale qualquer
+  entrega no mês). É a base da aba Divergências.
+- **% validadas:** validadas ÷ todas as tarefas do setor no mês (fora as abertas não verificáveis).
 - O produto é reconhecido pelo código na cesta (a descrição do Promax vem cortada em 20 letras).
 
 **Para os dois**

@@ -52,6 +52,11 @@ export interface Tarefa {
   cat: string;
   /** OPEN ou VALID. */
   status: string;
+  /**
+   * Está no export de Long Neck (a cesta LN HE acompanhada). undefined = não há export de LN:
+   * a classificação usa o texto da tarefa.
+   */
+  ln?: boolean;
   solicitada: number;
   ja: number;
   texto: string;

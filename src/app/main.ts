@@ -97,12 +97,12 @@ const TXT: Record<
   },
   mes: {
     h1: 'Tasks de compra',
-    destaque: 'concluídas no mês',
-    feitas: 'Concluídas',
-    colFeitas: 'Concluídas',
-    colAp: '% concl.',
-    colVal: 'Valid. BEES',
-    lgF: 'Concluídas (BEES + faturado)',
+    destaque: 'validadas no mês',
+    feitas: 'Validadas',
+    colFeitas: 'Validadas',
+    colAp: '% valid.',
+    colVal: 'A validar',
+    lgF: 'Validadas no BEES',
     lgB: 'Total de tarefas',
     pasta: 'meses',
   },
@@ -240,7 +240,7 @@ function renderControles() {
     .map((d) => {
       if (EST.modo === 'dia') return `<option value="${d.chave}">${dataBr(d.dia)} · ${diaSemana(d.dia)} · ${fmt(d.feitas)} feitas</option>`;
       if (EST.modo === 'mes')
-        return `<option value="${d.chave}">${mesBr(d.chave)} · entregas até ${dataBr(d.dia)} · ${fmt(d.feitas)} concluídas</option>`;
+        return `<option value="${d.chave}">${mesBr(d.chave)} · entregas até ${dataBr(d.dia)} · ${fmt(d.feitas)} validadas</option>`;
       const dv = INDICE!.divergencias?.find((x) => x.chave === d.chave);
       return `<option value="${d.chave}">${mesBr(d.chave)} · ${fmt(dv?.atrasadas ?? 0)} atrasadas</option>`;
     })
@@ -284,7 +284,7 @@ function renderCabecalho() {
     `Fontes: ${esc(f.arquivos.pedidos)} · ${f.arquivos.tarefas.map(esc).join(' · ')} · ${esc(f.arquivos.cesta)}. ` +
     (f.tipo === 'dia'
       ? `Pedidos bloqueados ${f.config.incluirBloqueados ? 'contam' : 'não contam'} como venda. Prévia calculada pelos pedidos; a validação oficial do BEES acontece após o faturamento.`
-      : 'Contam notas de venda e bonificação com entrega no mês; devolvidas e canceladas ficam de fora. Concluídas pelo faturado ainda aguardam a validação oficial do BEES.');
+      : 'Só a validação do BEES conclui a tarefa. O faturado (notas de venda e bonificação entregues no mês; devolvidas e canceladas fora) comprova cada validada e aponta as abertas que já deveriam estar validadas (aba Divergências).');
   $('legF').textContent = t.lgF;
   $('legB').textContent = t.lgB;
 }
@@ -299,17 +299,17 @@ function renderKpis(tot: Totais) {
     <div class="kpi"><div class="k">Aproveitamento</div><div class="v">${pct(ap, 1)}</div><div class="s">${fmt(tot.feitas)} de ${fmt(tot.base)} tarefas abertas nesses PDVs</div></div>
     <div class="kpi"><div class="k">Já concluídas antes</div><div class="v">${fmt(tot.validadas)}</div><div class="s">validadas no BEES ou já cobertas pelo faturado do mês</div></div>`
       : `
-    <div class="kpi lead"><div class="k">Tasks concluídas no mês</div><div class="v">${fmt(tot.feitas)}</div><div class="s">${fmt(tot.validadas)} validadas no BEES + ${fmt(tot.feitasCalculo)} pelo faturado</div></div>
+    <div class="kpi lead"><div class="k">Tasks validadas no BEES</div><div class="v">${fmt(tot.feitas)}</div><div class="s">validação oficial do mês, comprovada pelo faturado</div></div>
     <div class="kpi"><div class="k">PDVs faturados</div><div class="v">${fmt(tot.pdvComPedido)}</div><div class="s">de ${fmt(tot.pdvComTarefa)} PDVs com tarefa de compra</div></div>
-    <div class="kpi"><div class="k">% de conclusão</div><div class="v">${pct(ap, 1)}</div><div class="s">${fmt(tot.feitas)} de ${fmt(tot.base)} tarefas verificáveis</div></div>
-    <div class="kpi"><div class="k">Parciais</div><div class="v">${fmt(tot.parciais)}</div><div class="s">faturou o produto, falta quantidade · ${fmt(tot.nv)} não verificáveis fora</div></div>`;
+    <div class="kpi"><div class="k">% validadas</div><div class="v">${pct(ap, 1)}</div><div class="s">${fmt(tot.feitas)} de ${fmt(tot.base)} tarefas do mês</div></div>
+    <div class="kpi"><div class="k">Abertas que deveriam estar validadas</div><div class="v">${fmt(tot.feitasCalculo)}</div><div class="s">o faturado comprova, o BEES ainda não validou · veja a aba Divergências · ${fmt(tot.parciais)} parciais</div></div>`;
 }
 
 function renderIndicadores(tot: Totais) {
   const mx = Math.max(1, ...tot.basePorInd);
   let h = '<div class="grp">Desenvolvimento de Portfólio</div>';
   INDICADORES.forEach((ind, i) => {
-    if (ind === 'Marketplace') h += '<div class="grp">Marketplace e Volume</div>';
+    if (ind === 'Marketplace') h += '<div class="grp">Marketplace</div>';
     const fe = tot.feitasPorInd[i],
       ab = tot.basePorInd[i];
     h += `<div class="bar${EST.ind === ind ? ' sel' : ''}" data-ind="${ind}" role="button" tabindex="0" aria-pressed="${EST.ind === ind}">
@@ -353,6 +353,7 @@ function valor(l: LinhaSetor, k: string): number | string {
     case 'feitas':
     case 'parciais':
     case 'validadas':
+      if (F!.tipo === 'mes') return l.feitasCalculo;
       return l[k];
     default:
       return l.porInd[+k.slice(1)];
@@ -390,12 +391,15 @@ function renderTabela(res: ReturnType<typeof calcular>) {
       ${INDICADORES.map((ind, i) => `<td class="${l.porInd[i] ? 'hot' : 'z'}${dim(ind)}">${heat(l.porInd[i])}</td>`).join('')}
       <td class="tot">${fmt(l.feitas)}</td><td>${l.parciais ? fmt(l.parciais) : '·'}</td>
       <td>${l.aproveitamento == null ? '—' : `<span class="pct"><i><b style="width:${Math.min(100, l.aproveitamento * 100)}%"></b></i>${pct(l.aproveitamento)}</span>`}</td>
-      <td>${l.validadas ? fmt(l.validadas) : '·'}</td></tr>`;
+      <td>${(() => {
+        const n = F!.tipo === 'mes' ? l.feitasCalculo : l.validadas;
+        return n ? fmt(n) : '·';
+      })()}</td></tr>`;
   }
   const t = res.tot;
   h += `<tr class="sum"><td class="l fix">Total</td><td colspan="3"></td><td>${fmt(t.pdvComPedido)} <small>/ ${fmt(t.pdvComTarefa)}</small></td>
     ${t.feitasPorInd.map((n, i) => `<td class="${dim(INDICADORES[i]).trim()}">${n ? fmt(n) : '·'}</td>`).join('')}
-    <td class="tot">${fmt(t.feitas)}</td><td>${fmt(t.parciais)}</td><td>${pct(t.base ? t.feitas / t.base : null)}</td><td>${fmt(t.validadas)}</td></tr></tbody>`;
+    <td class="tot">${fmt(t.feitas)}</td><td>${fmt(t.parciais)}</td><td>${pct(t.base ? t.feitas / t.base : null)}</td><td>${fmt(F!.tipo === 'mes' ? t.feitasCalculo : t.validadas)}</td></tr></tbody>`;
   $('tbl').innerHTML = h;
 
   const aberto = linhas.find((l) => l.s.id === EST.aberto);
@@ -422,22 +426,22 @@ function gaveta(l: LinhaSetor): string {
   const pdvs = det.pdvs
     .map((p) => {
       // Concluídas primeiro: no mês, as validadas pelo BEES também contam como concluídas.
-      const ordem: Record<string, number> = mes ? { F: 0, V: 1, P: 2, N: 3, X: 4 } : { F: 0, P: 1, N: 2, V: 3, X: 4 };
+      const ordem: Record<string, number> = mes ? { V: 0, F: 1, P: 2, N: 3, X: 4 } : { F: 0, P: 1, N: 2, V: 3, X: 4 };
       const tarefas = p.tarefas.filter((t) => filtroInd < 0 || t[1] === filtroInd).sort((a, b) => ordem[a[0]] - ordem[b[0]]);
       const cont = (st: string) => tarefas.filter((t) => t[0] === st).length;
-      return { p, tarefas, feitas: cont('F') + (mes ? cont('V') : 0), parciais: cont('P') };
+      return { p, tarefas, feitas: mes ? cont('V') : cont('F'), aValidar: mes ? cont('F') : 0, parciais: cont('P') };
     })
     .filter((x) => x.tarefas.length)
     .sort((a, b) => b.feitas - a.feitas || b.parciais - a.parciais);
 
-  h += `<div class="sub">${fmt(pdvs.length)} PDVs ${mes ? 'faturados' : 'com pedido'} e com tarefa · ${fmt(s.pdvComTarefa - s.pdvComPedido)} PDVs com tarefa ficaram sem ${
+  h += `<div class="sub">${fmt(pdvs.length)} PDVs ${mes ? 'com nota ou tarefa validada' : 'com pedido e com tarefa'} · ${fmt(s.pdvComTarefa - s.pdvComPedido)} PDVs com tarefa ficaram sem ${
     mes ? `faturamento em ${mesBr(f.chave)}` : `pedido em ${dataBr(f.dia)}`
   }</div>`;
   if (!pdvs.length) h += `<div class="empty">Nenhum PDV deste setor ${mes ? 'teve nota no mês' : 'fez pedido neste dia'}.</div>`;
-  pdvs.forEach(({ p, tarefas, feitas, parciais }, i) => {
+  pdvs.forEach(({ p, tarefas, feitas, aValidar, parciais }, i) => {
     h += `<details class="pdv"${i < 3 && feitas ? ' open' : ''}><summary><span class="nm">${esc(p.nome) || 'PDV'}</span>
       <span class="cd">PDV ${p.pdv}${p.visita ? ' · visita ' + dataBr(p.visita) : ''}${p.rn ? ' · RN ' + esc(p.rn) : ''}</span><span class="chips">
-      ${feitas ? `<span class="pill p-F">${feitas} ${mes ? 'concluídas' : 'feitas'}</span>` : ''}${parciais ? `<span class="pill p-P">${parciais} parciais</span>` : ''}
+      ${feitas ? `<span class="pill p-F">${feitas} ${mes ? 'validadas' : 'feitas'}</span>` : ''}${aValidar ? `<span class="pill p-N">${aValidar} a validar</span>` : ''}${parciais ? `<span class="pill p-P">${parciais} parciais</span>` : ''}
       <span class="pill p-tot">${tarefas.length} tarefas</span></span></summary><div class="tl">`;
     for (const [st, ind, md, txt, prog, provas, valid] of tarefas) {
       h += `<div class="trow"><div><span class="pill p-${st}">${nomes[st]}</span><div class="ix">${NOME_CURTO[INDICADORES[ind]]} · ${md === 'M' ? 'Mensal' : 'Diária'}</div></div>
@@ -533,7 +537,7 @@ function renderDiv() {
   const mx = Math.max(1, ...t.porInd);
   let h = '<div class="grp">Desenvolvimento de Portfólio</div>';
   INDICADORES.forEach((ind, i) => {
-    if (ind === 'Marketplace') h += '<div class="grp">Marketplace e Volume</div>';
+    if (ind === 'Marketplace') h += '<div class="grp">Marketplace</div>';
     const fe = atras.tot.porInd[i],
       ab = t.porInd[i];
     h += `<div class="bar${EST.ind === ind ? ' sel' : ''}" data-ind="${ind}" role="button" tabindex="0" aria-pressed="${EST.ind === ind}">
@@ -673,11 +677,11 @@ function tabelaTexto(sep: string): string {
     mes ? 'PDVs faturados' : 'PDVs c/ pedido',
     'PDVs c/ tarefa',
     ...INDICADORES,
-    mes ? 'Concluídas' : 'Feitas',
-    ...(mes ? ['Concluídas pelo faturado'] : []),
+    mes ? 'Validadas BEES' : 'Feitas',
+    ...(mes ? ['Abertas que o faturado comprova'] : []),
     'Parciais',
-    mes ? '% Conclusão' : 'Aproveitamento',
-    mes ? 'Validadas BEES' : 'Já concluídas',
+    mes ? '% Validadas' : 'Aproveitamento',
+    ...(mes ? [] : ['Já concluídas']),
   ];
   const q = (v: unknown) => (sep === ';' && /[;"\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
   const linhas = res.linhas
@@ -696,7 +700,7 @@ function tabelaTexto(sep: string): string {
         ...(mes ? [l.feitasCalculo] : []),
         l.parciais,
         pct(l.aproveitamento, 1),
-        l.validadas,
+        ...(mes ? [] : [l.validadas]),
       ]
         .map(q)
         .join(sep),

@@ -20,6 +20,7 @@ import {
   COLUNAS_FATURADOS,
   COLUNAS_PEDIDOS,
   COLUNAS_TAREFAS,
+  chaveTarefa,
   indicador,
   interpretarTarefa,
   itemConta,
@@ -106,15 +107,41 @@ function lerCestaAtual(): { cesta: Cesta; arquivo: string } {
   return { cesta, arquivo: path.basename(arq) };
 }
 
+/**
+ * Export de Long Neck: as tarefas desta lista formam a cesta LN HE (um indicador só).
+ * Sem o arquivo, a LN HE é reconhecida pelo texto da tarefa.
+ */
+function lerListaLn(): { chaves: Set<string> | null; arquivo: string | null } {
+  const arq = acharArquivo(CONFIG.pastaEntrada, 'tarefasLn');
+  if (!arq) {
+    console.log(cor.aviso('  ! Sem o export de Long Neck (.xlsx com "LongNeck" no nome): a LN HE sai pelo texto da tarefa.'));
+    return { chaves: null, arquivo: null };
+  }
+  const linhas = lerPlanilha(arq, 'Export');
+  const falta = colunasFaltando(linhas[0], COLUNAS_TAREFAS);
+  if (falta.length) throw new ErroFechamento(`Em ${path.basename(arq)} faltam as colunas: ${falta.join(', ')}.`);
+  const chaves = new Set(lerTarefas(linhas).map(chaveTarefa));
+  console.log(`  Tarefas LN ${path.basename(arq)}  (${fmt(chaves.size)} tarefas da cesta LN HE)`);
+  return { chaves, arquivo: path.basename(arq) };
+}
+
 function lerTodasTarefas(): { tarefas: Tarefa[]; arquivos: string[] } {
   const arquivos = exigir(acharArquivos(CONFIG.pastaEntrada, 'tarefas'), 'o export de tarefas (.xlsx com "bees" no nome)');
+  const listaLn = lerListaLn();
   const tarefas: Tarefa[] = [];
   const vistas = new Set<string>();
+  let lnAchadas = 0;
   for (const arq of arquivos) {
     const linhas = lerPlanilha(arq, 'Export');
     const falta = colunasFaltando(linhas[0], COLUNAS_TAREFAS);
     if (falta.length) throw new ErroFechamento(`Em ${path.basename(arq)} faltam as colunas: ${falta.join(', ')}.`);
-    const doArquivo = lerTarefas(linhas).filter((t) => indicador(t));
+    const lidas = lerTarefas(linhas);
+    if (listaLn.chaves)
+      for (const t of lidas) {
+        t.ln = listaLn.chaves.has(chaveTarefa(t));
+        if (t.ln) lnAchadas++;
+      }
+    const doArquivo = lidas.filter((t) => indicador(t));
     const unbs = [...new Set(doArquivo.map((t) => t.unb))];
     // Se dois arquivos trouxerem a mesma revenda, vale o mais recente.
     const repetidas = unbs.filter((u) => vistas.has(u));
@@ -123,7 +150,12 @@ function lerTodasTarefas(): { tarefas: Tarefa[]; arquivos: string[] } {
     unbs.forEach((u) => vistas.add(u));
     console.log(`  Tarefas   ${path.basename(arq)}  (${unbs.map((u) => NOME_REVENDA[u] ?? `UNB ${u} sem nome em config.ts`).join(', ')})`);
   }
-  return { tarefas, arquivos: arquivos.map((a) => path.basename(a)) };
+  if (listaLn.chaves && lnAchadas < listaLn.chaves.size)
+    console.log(
+      cor.aviso(`  ! ${fmt(listaLn.chaves.size - lnAchadas)} tarefas do export de Long Neck não estão nos exports gerais (export de outro dia?).`),
+    );
+  const nomes = arquivos.map((a) => path.basename(a));
+  return { tarefas, arquivos: listaLn.arquivo ? [...nomes, listaLn.arquivo] : nomes };
 }
 
 // ---------------------------------------------------------------------------
@@ -184,7 +216,7 @@ function gravar(f: Fechamento, indice: Indice) {
     chave: f.chave,
     dia: f.dia,
     geradoEm: f.geradoEm,
-    feitas: soma(C_FEITAS) + (f.tipo === 'mes' ? soma(C_VALIDADAS) : 0),
+    feitas: f.tipo === 'mes' ? soma(C_VALIDADAS) : soma(C_FEITAS),
     pdvComPedido: f.setores.reduce((a, s) => a + s.pdvComPedido, 0),
   };
   const nova = lista.filter((d) => d.chave !== f.chave);
@@ -215,12 +247,12 @@ function resumir(f: Fechamento, resultados: Resultado[]) {
   }
   for (const [rev, r] of porRevenda) {
     const principal = mes
-      ? `${cor.ok(fmt(r.feitas + r.validadas).padStart(6))} concluídas (${fmt(r.validadas)} validadas BEES + ${fmt(r.feitas)} pelo faturado)`
+      ? `${cor.ok(fmt(r.validadas).padStart(6))} validadas BEES · ${cor.aviso(fmt(r.feitas))} abertas que o faturado comprova`
       : `${cor.ok(fmt(r.feitas).padStart(5))} feitas`;
     console.log(`  ${rev.padEnd(11)} ${principal} · ${fmt(r.parciais)} parciais · ${fmt(r.pdvs)} PDVs ${mes ? 'faturados' : 'com pedido'}`);
   }
   const porInd = INDICADORES.map(
-    (ind, i) => `${NOME_CURTO[ind]} ${fmt(f.setores.reduce((a, s) => a + s.ind[i][C_FEITAS] + (mes ? s.ind[i][C_VALIDADAS] : 0), 0))}`,
+    (ind, i) => `${NOME_CURTO[ind]} ${fmt(f.setores.reduce((a, s) => a + (mes ? s.ind[i][C_VALIDADAS] : s.ind[i][C_FEITAS]), 0))}`,
   );
   console.log(`  Por indicador: ${porInd.join(' · ')}`);
 
@@ -334,7 +366,7 @@ function fechamentoMes(
   cadastro: Cadastro,
   indice: Indice,
 ) {
-  console.log(cor.forte('\n  ▸ Mês — tarefas concluídas pelo faturado'));
+  console.log(cor.forte('\n  ▸ Mês — tarefas validadas no BEES (faturado como comprovação)'));
   avisarSemCesta(itens, 'do faturado');
   // O mês vem das tarefas ("Mês/ Ano"); sem ele, o mês com mais entregas.
   const contaMes = (lista: string[]) => {
@@ -480,6 +512,12 @@ async function main() {
 
   // NB do setor vem dos pedidos do dia (o faturado não traz vendedor); nome do PDV de qualquer um dos dois.
   const cadastro = cadastroDosItens(itensDia, itensMes);
+  // Guarda o último NB conhecido de cada setor: um arquivo de pedidos parcial (só algumas revendas) não apaga os outros.
+  const arqNb = path.join(CONFIG.pastaBase, 'nb-setores.json');
+  const nbSalvo: Record<string, string> = fs.existsSync(arqNb) ? JSON.parse(fs.readFileSync(arqNb, 'utf8')) : {};
+  cadastro.nb = { ...nbSalvo, ...cadastro.nb };
+  fs.mkdirSync(CONFIG.pastaBase, { recursive: true });
+  fs.writeFileSync(arqNb, JSON.stringify(cadastro.nb, null, 1));
   const indice = lerIndice();
   if (arqPedidos) fechamentoDia(args, tarefas, itensDia, itensMes, arqPedidos, base, cadastro, indice);
   if (arqFaturados && args.fazerMes) fechamentoMes(tarefas, itensMes, arqFaturados, base, cadastro, indice);

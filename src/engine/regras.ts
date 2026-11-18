@@ -343,21 +343,27 @@ export function interpretarTarefa(texto: string): Regra {
 const TEXTO_SKU_PDV = /SKUS? DISTINTOS D[EA] (CERVEJA|NAB|MARKETPLACE|MATCH)(?: NO MES)?\.?$/;
 /** Tarefas com "Long Neck" ou "LN" no texto. */
 const TEXTO_LN = /\bLN\b|LONG NECK/;
-/** LN High End: Corona (Extra/Cero/Zero), Michelob, Stella, Stella Pure Gold, ou o grupo HE/Premium. */
-const TEXTO_LN_HE = /CORONA|MICHELOB|STELLA|HIGH END|\bHE\b|PREMIUM/;
+/** LN High End: Corona (Extra/Cero/Zero), Michelob, Stella, Stella Pure Gold, Spaten, ou o grupo HE/Premium. */
+const TEXTO_LN_HE = /CORONA|MICHELOB|STELLA|SPATEN|HIGH END|\bHE\b|PREMIUM/;
 
 /** Classifica a tarefa nos indicadores do painel. `null` = fora do escopo (Execução, Digitalização…). */
-export function indicador(task: Pick<Tarefa, 'cluster' | 'cat' | 'texto'>): Indicador | null {
+export function indicador(task: Pick<Tarefa, 'cluster' | 'cat' | 'texto' | 'ln'>): Indicador | null {
   const { cluster, cat } = task;
-  if (cluster !== 'Desenvolvimento de Portfólio' && cluster !== 'Marketplace' && cluster !== 'Volume') return null;
+  // A lista do export de Long Neck manda: tudo que está nela é LN HE (inclusive as de venda/volume de LN).
+  if (task.ln === true) return 'DP · LN HE';
+  // Volume, Execução, Digitalização… não são acompanhados.
+  if (cluster !== 'Desenvolvimento de Portfólio' && cluster !== 'Marketplace') return null;
   const t = norm(task.texto);
-  if (cluster !== 'Volume' && TEXTO_SKU_PDV.test(t)) return 'DP · SKU PDV';
-  if (cluster === 'Marketplace') return 'Marketplace';
-  if (cluster === 'Volume') return 'Volume';
-  if (TEXTO_LN.test(t)) return TEXTO_LN_HE.test(t) ? 'DP · LN High End' : 'DP · LN';
+  if (TEXTO_SKU_PDV.test(t)) return 'DP · SKU PDV';
+  if (cluster === 'Marketplace' || cat === 'MKTPLACE') return 'Marketplace';
+  // Sem o export de LN, reconhece a LN HE pelo texto. Long neck fora da lista fica na categoria (Cerveja, Match…).
+  if (task.ln === undefined && TEXTO_LN.test(t) && TEXTO_LN_HE.test(t)) return 'DP · LN HE';
   if (cat === 'BEER') return 'DP · Cerveja';
   if (cat === 'NAB') return 'DP · NAB';
   if (cat === 'MATCH') return 'DP · Match';
-  if (cat === 'MKTPLACE') return 'DP · Marketplace';
   return 'DP · Outras';
 }
+
+/** Chave da tarefa para cruzar o export de Long Neck com o export geral. */
+export const chaveTarefa = (t: Pick<Tarefa, 'unb' | 'pdv' | 'setor' | 'texto' | 'visita' | 'mes'>) =>
+  [t.unb, t.pdv, t.setor, t.texto, t.visita, t.mes ?? ''].join('|');

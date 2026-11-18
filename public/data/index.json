@@ -1,43 +1,50 @@
 {
-  "versao": 4,
-  "atualizadoEm": "2026-11-17T20:27:54.654Z",
+  "versao": 5,
+  "atualizadoEm": "2026-11-18T18:42:04.320Z",
   "dias": [
+    {
+      "chave": "2026-11-18",
+      "dia": "2026-11-18",
+      "geradoEm": "2026-11-18T18:41:42.108Z",
+      "feitas": 270,
+      "pdvComPedido": 275
+    },
     {
       "chave": "2026-11-17",
       "dia": "2026-11-17",
       "geradoEm": "2026-11-17T20:27:33.475Z",
-      "feitas": 1735,
+      "feitas": 1547,
       "pdvComPedido": 1517
     },
     {
       "chave": "2026-11-16",
       "dia": "2026-11-16",
       "geradoEm": "2026-11-16T20:52:21.272Z",
-      "feitas": 1711,
+      "feitas": 1497,
       "pdvComPedido": 1669
     },
     {
       "chave": "2026-11-12",
       "dia": "2026-11-12",
       "geradoEm": "2026-11-16T20:21:07.559Z",
-      "feitas": 1919,
+      "feitas": 1759,
       "pdvComPedido": 1669
     }
   ],
   "meses": [
     {
       "chave": "2026-11",
-      "dia": "2026-11-17",
-      "geradoEm": "2026-11-17T20:27:53.419Z",
-      "feitas": 26010,
-      "pdvComPedido": 12348
+      "dia": "2026-11-18",
+      "geradoEm": "2026-11-18T18:42:00.331Z",
+      "feitas": 24971,
+      "pdvComPedido": 12574
     }
   ],
   "divergencias": [
     {
       "chave": "2026-11",
-      "total": 2128,
-      "atrasadas": 307
+      "total": 2280,
+      "atrasadas": 297
     }
   ]
 }

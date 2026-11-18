@@ -4,12 +4,14 @@ import path from 'node:path';
 import readline from 'node:readline';
 import XLSX from 'xlsx';
 
-export type TipoArquivo = 'pedidos' | 'faturados' | 'tarefas' | 'cesta';
+export type TipoArquivo = 'pedidos' | 'faturados' | 'tarefas' | 'tarefasLn' | 'cesta';
 
 const PADROES: Record<TipoArquivo, { ext: RegExp; nome: RegExp; exceto?: RegExp }> = {
   pedidos: { ext: /\.(csv|txt)$/i, nome: /pedido/i, exceto: /faturad/i },
   faturados: { ext: /\.(csv|txt)$/i, nome: /faturad/i },
-  tarefas: { ext: /\.xlsx?$/i, nome: /bees|tarefa|task/i },
+  tarefas: { ext: /\.xlsx?$/i, nome: /bees|tarefa|task/i, exceto: /long ?neck/i },
+  // Export do BEES só com as tarefas de Long Neck acompanhadas (cesta LN HE), ex.: fLongNeck202611.xlsx.
+  tarefasLn: { ext: /\.xlsx?$/i, nome: /long ?neck/i },
   cesta: { ext: /\.xlsx?$/i, nome: /cesta/i },
 };
 

@@ -80,8 +80,9 @@ describe('equivalências de produto', () => {
 });
 
 describe('indicador', () => {
-  it('separa LN dentro de Desenvolvimento de Portfólio', () => {
-    expect(indicador({ cluster: 'Desenvolvimento de Portfólio', cat: 'BEER', texto: 'cobertura de BUDWEISER LONG NECK 330' })).toBe('DP · LN');
+  it('separa LN HE dentro de Desenvolvimento de Portfólio', () => {
+    expect(indicador({ cluster: 'Desenvolvimento de Portfólio', cat: 'BEER', texto: 'cobertura de STELLA ARTOIS LONG NECK 330' })).toBe('DP · LN HE');
+    expect(indicador({ cluster: 'Desenvolvimento de Portfólio', cat: 'BEER', texto: 'cobertura de BUDWEISER LONG NECK 330' })).toBe('DP · Cerveja');
     expect(indicador({ cluster: 'Desenvolvimento de Portfólio', cat: 'BEER', texto: 'cobertura de SKOL LATA' })).toBe('DP · Cerveja');
     expect(indicador({ cluster: 'Execução', cat: '', texto: 'foto' })).toBeNull();
   });

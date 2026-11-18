@@ -22,9 +22,9 @@ export interface Filtros {
 
 export interface LinhaSetor {
   s: SetorFechamento;
-  /** Dia: feitas no dia. Mês: concluídas (validadas BEES + concluídas pelo faturado). */
+  /** Dia: feitas no dia. Mês: validadas no BEES. */
   feitas: number;
-  /** Só o que o cálculo fechou (sem as já validadas). */
+  /** Dia: igual a feitas. Mês: abertas no BEES que o faturado já comprova (deveriam estar validadas). */
   feitasCalculo: number;
   parciais: number;
   /** Base do aproveitamento: dia = abertas nos PDVs que compraram; mês = todas as tarefas verificáveis. */
@@ -51,9 +51,10 @@ export interface Totais {
 /**
  * Regras de soma por tipo de fechamento:
  * - dia: feitas = F; base = abertas nos PDVs que compraram (já concluídas ficam à parte);
- * - mês: feitas = F + validadas BEES; base = todas as tarefas verificáveis do setor.
+ * - mês: feitas = validadas no BEES (só a validação oficial conclui); base = todas as tarefas do setor.
+ *   As abertas que o faturado comprova (F) ficam à parte: são as divergências.
  */
-const feitasDe = (c: Contagem, mes: boolean) => c[C_FEITAS] + (mes ? c[C_VALIDADAS] : 0);
+const feitasDe = (c: Contagem, mes: boolean) => (mes ? c[C_VALIDADAS] : c[C_FEITAS]);
 const baseDe = (c: Contagem, mes: boolean) => c[C_ABERTAS] + (mes ? c[C_VALIDADAS] : 0);
 
 export function setoresFiltrados(f: Fechamento, filtros: Filtros): SetorFechamento[] {

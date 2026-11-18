@@ -2,36 +2,26 @@
  * Formato dos arquivos publicados em public/data — o contrato entre a rotina de
  * fechamento (que grava) e o painel (que lê). Mudou o formato? Suba VERSAO_MODELO.
  */
-export const VERSAO_MODELO = 4;
+export const VERSAO_MODELO = 5;
 
 /** dia = vespertina (pedidos digitados no dia); mes = tarefas concluídas pelo faturado do mês. */
 export type TipoFechamento = 'dia' | 'mes';
 
-export const INDICADORES = [
-  'DP · Cerveja',
-  'DP · LN',
-  'DP · LN High End',
-  'DP · NAB',
-  'DP · Match',
-  'DP · SKU PDV',
-  'DP · Marketplace',
-  'DP · Outras',
-  'Marketplace',
-  'Volume',
-] as const;
+/**
+ * Indicadores do painel. LN HE é uma cesta só (a lista de tarefas do export de Long Neck);
+ * Marketplace junta o cluster Marketplace e o Portfólio de categoria Marketplace; Volume não é acompanhado.
+ */
+export const INDICADORES = ['DP · Cerveja', 'DP · LN HE', 'DP · NAB', 'DP · Match', 'DP · SKU PDV', 'DP · Outras', 'Marketplace'] as const;
 export type Indicador = (typeof INDICADORES)[number];
 
 export const NOME_CURTO: Record<Indicador, string> = {
   'DP · Cerveja': 'Cerveja',
-  'DP · LN': 'LN',
-  'DP · LN High End': 'LN HE',
+  'DP · LN HE': 'LN HE',
   'DP · NAB': 'NAB',
   'DP · Match': 'Match',
   'DP · SKU PDV': 'SKU PDV',
-  'DP · Marketplace': 'Mktplace',
   'DP · Outras': 'Outras',
   Marketplace: 'Marketplace',
-  Volume: 'Volume',
 };
 
 /**
@@ -65,7 +55,8 @@ export interface SetorFechamento {
 export type CodStatus = 'F' | 'P' | 'N' | 'V' | 'X';
 export const STATUS_NOME: Record<TipoFechamento, Record<CodStatus, string>> = {
   dia: { F: 'Feita no dia', P: 'Parcial', N: 'Não feita', V: 'Já validada', X: 'Não verificável' },
-  mes: { F: 'Concluída (faturado)', P: 'Parcial', N: 'Não feita', V: 'Validada BEES', X: 'Não verificável' },
+  // Mês: só a validação do BEES conclui. F = aberta no BEES, mas o faturado já comprova (vai para Divergências).
+  mes: { F: 'Aberta · faturado comprova', P: 'Parcial', N: 'Não feita', V: 'Validada BEES', X: 'Não verificável' },
 };
 
 /**

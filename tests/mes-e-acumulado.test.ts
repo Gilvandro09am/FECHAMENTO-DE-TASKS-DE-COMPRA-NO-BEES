@@ -46,8 +46,8 @@ describe('textos novos (Guarabira, Sousa, Itaporanga)', () => {
   });
 });
 
-describe('indicadores SKU PDV, LN e LN High End', () => {
-  const dp = (texto: string, cat = 'BEER', cluster = 'Desenvolvimento de Portfólio') => indicador({ cluster, cat, texto });
+describe('indicadores SKU PDV, LN HE e Marketplace', () => {
+  const dp = (texto: string, cat = 'BEER', cluster = 'Desenvolvimento de Portfólio', ln?: boolean) => indicador({ cluster, cat, texto, ln });
 
   it('SKU PDV só com "N SKUs distintos de CERVEJA / NAB / MARKETPLACE / MATCH"', () => {
     expect(dp('Auxilie o PDV a comprar 3 SKUs distintos de CERVEJA no mês.')).toBe('DP · SKU PDV');
@@ -61,17 +61,28 @@ describe('indicadores SKU PDV, LN e LN High End', () => {
     expect(dp('Auxilie na venda de  2 SKUs distintos da MINALBA (PETRÓPOLIS, INDAIA, etc.).', 'MKTPLACE', 'Marketplace')).toBe('Marketplace');
   });
 
-  it('LN: "Long Neck" ou "LN" no texto', () => {
-    expect(dp('Auxilie na cobertura de BUDWEISER ZERO LONG NECK 330.')).toBe('DP · LN');
-    expect(dp('Auxilie na cobertura de SPATEN LONG NECK 355.')).toBe('DP · LN');
+  it('LN HE pelo texto (sem o export de Long Neck): Corona, Michelob, Stella, Pure Gold, Spaten e grupo HE', () => {
+    expect(dp('Auxilie na cobertura de CORONA LONG NECK 330.')).toBe('DP · LN HE');
+    expect(dp('Auxilie na cobertura de CORONA CERO LONG NECK 330.')).toBe('DP · LN HE');
+    expect(dp('Auxilie na cobertura de MICHELOB ULTRA LONG NECK.')).toBe('DP · LN HE');
+    expect(dp('Auxilie na cobertura de STELLA ARTOIS PURE GOLD LONG NECK 330.')).toBe('DP · LN HE');
+    expect(dp('Auxilie na cobertura de SPATEN LONG NECK 355.')).toBe('DP · LN HE');
+    expect(dp('Auxilie o PDV a comprar 4 SKUs distintos de +LN Long Necks HE (Stellas, Spaten, Coronas e Michelob). no mês.')).toBe('DP · LN HE');
+    // Long neck que não é High End fica na categoria.
+    expect(dp('Auxilie na cobertura de BUDWEISER ZERO LONG NECK 330.')).toBe('DP · Cerveja');
   });
 
-  it('LN High End: Corona, Corona Cero, Michelob, Stella, Stella Pure Gold e grupo HE', () => {
-    expect(dp('Auxilie na cobertura de CORONA LONG NECK 330.')).toBe('DP · LN High End');
-    expect(dp('Auxilie na cobertura de CORONA CERO LONG NECK 330.')).toBe('DP · LN High End');
-    expect(dp('Auxilie na cobertura de MICHELOB ULTRA LONG NECK.')).toBe('DP · LN High End');
-    expect(dp('Auxilie na cobertura de STELLA ARTOIS PURE GOLD LONG NECK 330.')).toBe('DP · LN High End');
-    expect(dp('Auxilie o PDV a comprar 4 SKUs distintos de +LN Long Necks HE (Stellas, Spaten, Coronas e Michelob). no mês.')).toBe('DP · LN High End');
+  it('com o export de Long Neck, só as tarefas da lista são LN HE', () => {
+    expect(dp('Auxilie na cobertura de CORONA LONG NECK 330.', 'BEER', 'Desenvolvimento de Portfólio', false)).toBe('DP · Cerveja');
+    expect(dp('Auxilie na cobertura de BUDWEISER LONG NECK 330.', 'BEER', 'Desenvolvimento de Portfólio', true)).toBe('DP · LN HE');
+    // Tarefa de venda (Volume) que está na lista de LN entra na LN HE.
+    expect(dp('Ajude na venda de 3 caixa(s) de MICHELOB ULTRA LONG NECK 330.', 'BEER', 'Volume', true)).toBe('DP · LN HE');
+  });
+
+  it('Volume não é acompanhado e Marketplace é uma coluna só', () => {
+    expect(dp('Ajude na venda de 10 caixa(s) de SKOL LATA 350.', 'BEER', 'Volume')).toBeNull();
+    expect(dp('Auxilie na cobertura de MARKETPLACE. PDV não comprador de MARKETPLACE.', 'MKTPLACE')).toBe('Marketplace');
+    expect(dp('Auxilie na venda de qualquer SKU da indústria MONDELEZ.', 'MKTPLACE', 'Marketplace')).toBe('Marketplace');
   });
 
   it('produto LN High End: aceita as marcas da lista e só aceita Spaten quando a tarefa cita', () => {

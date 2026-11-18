@@ -76,17 +76,17 @@
         <div class="hd"><h2>Como é calculado</h2><p>Regras aplicadas a cada tarefa</p></div>
         <div class="rules">
           <p>
-            Tarefas do BEES Force em escopo: Desenvolvimento de Portfólio (Cerveja, LN, LN High End, NAB, Match, SKU PDV,
-            Marketplace, Outras), Marketplace e Volume. Os produtos do pedido ou da nota são reconhecidos pela cesta de
-            produtos (pelo código) e pelo nome do item.
+            Tarefas do BEES Force em escopo: Desenvolvimento de Portfólio (Cerveja, LN HE, NAB, Match, SKU PDV, Outras) e
+            Marketplace. Tarefas de Volume não são acompanhadas. Os produtos do pedido ou da nota são reconhecidos pela
+            cesta de produtos (pelo código) e pelo nome do item.
           </p>
           <dl>
             <dt>SKU PDV</dt>
             <dd>Só as tarefas "N SKUs distintos de CERVEJA / NAB / MARKETPLACE / MATCH".</dd>
-            <dt>LN</dt>
-            <dd>Tarefas de Portfólio com "Long Neck" ou "LN" no texto.</dd>
-            <dt>LN High End</dt>
-            <dd>Tarefas de long neck de Corona (Extra e Cero), Michelob, Stella e Stella Pure Gold, ou do grupo HE/Premium.</dd>
+            <dt>LN HE</dt>
+            <dd>Uma cesta só: as tarefas do export de Long Neck do BEES (Corona, Corona Cero, Stella, Stella Pure Gold, Michelob, Spaten e "+LN Long Necks HE"). Long neck fora dessa lista fica na categoria (Cerveja, Match…).</dd>
+            <dt>Marketplace</dt>
+            <dd>Uma coluna só: o cluster Marketplace e as tarefas de Portfólio da categoria Marketplace.</dd>
           </dl>
           <h3>Vespertina · pedidos do dia</h3>
           <dl>
@@ -105,12 +105,14 @@
           <dl>
             <dt>Notas que contam</dt>
             <dd>Notas de venda (operação 1) e bonificação (operação 2) com data de entrega no mês. Devolvidas e canceladas não contam; operações 5, 9, 108 e outras também não.</dd>
-            <dt>Concluída</dt>
-            <dd>Validada no BEES, ou o faturado do mês já atinge a meta da tarefa (aguardando a validação oficial).</dd>
+            <dt>Validada</dt>
+            <dd>Só a validação do BEES conclui a tarefa. Cada validada mostra as notas do faturado que a comprovam.</dd>
+            <dt>A validar</dt>
+            <dd>Tarefa aberta no BEES que o faturado do mês já comprova: deveria estar validada. A lista completa, com a situação de cada uma, fica na aba Divergências.</dd>
             <dt>Tarefa diária</dt>
             <dd>Vale qualquer nota com entrega no mês, como o BEES valida.</dd>
-            <dt>% de conclusão</dt>
-            <dd>Concluídas ÷ todas as tarefas verificáveis do setor (com ou sem faturamento).</dd>
+            <dt>% validadas</dt>
+            <dd>Validadas no BEES ÷ todas as tarefas do setor no mês (fora as abertas não verificáveis).</dd>
           </dl>
           <h3>Divergências · abertas no BEES</h3>
           <dl>

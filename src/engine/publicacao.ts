@@ -134,9 +134,9 @@ export function montarFechamento(resultados: Resultado[], o: OpcoesFechamento): 
       if (r.status === 'Parcial') c[C_PARCIAIS]++;
     }
 
-    // Detalhe por PDV: só quem fez pedido (dia) ou teve nota (mês).
+    // Detalhe por PDV: quem fez pedido (dia) ou teve nota (mês); no mês, também quem teve tarefa validada.
     const cs = COD[r.status];
-    if (!r.comprou || !cs) continue;
+    if (!cs || (!r.comprou && !(mes && cs === 'V'))) continue;
     const pk = `${id}|${t.pdv}`;
     let p = pdvs.get(pk);
     if (!p) {
