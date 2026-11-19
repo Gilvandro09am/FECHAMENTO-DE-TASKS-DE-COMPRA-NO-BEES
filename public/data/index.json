@@ -1,7 +1,14 @@
 {
   "versao": 5,
-  "atualizadoEm": "2026-11-18T20:36:12.443Z",
+  "atualizadoEm": "2026-11-19T20:42:22.444Z",
   "dias": [
+    {
+      "chave": "2026-11-19",
+      "dia": "2026-11-19",
+      "geradoEm": "2026-11-19T20:41:52.370Z",
+      "feitas": 1685,
+      "pdvComPedido": 1502
+    },
     {
       "chave": "2026-11-18",
       "dia": "2026-11-18",
@@ -34,17 +41,17 @@
   "meses": [
     {
       "chave": "2026-11",
-      "dia": "2026-11-18",
-      "geradoEm": "2026-11-18T20:36:11.033Z",
-      "feitas": 24971,
-      "pdvComPedido": 12574
+      "dia": "2026-11-19",
+      "geradoEm": "2026-11-19T20:42:12.507Z",
+      "feitas": 30310,
+      "pdvComPedido": 12807
     }
   ],
   "divergencias": [
     {
       "chave": "2026-11",
-      "total": 2280,
-      "atrasadas": 297
+      "total": 4330,
+      "atrasadas": 229
     }
   ]
 }
