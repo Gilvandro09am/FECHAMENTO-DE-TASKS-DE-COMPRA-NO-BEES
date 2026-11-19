@@ -2,7 +2,7 @@
 
 Mostra quantas tasks de compra do BEES Force (Desenvolvimento de Portfólio — Cerveja, LN HE, NAB, Match, SKU PDV,
 Outras — e Marketplace; Volume não é acompanhado) cada setor de **Patos, Sumé, Guarabira, Sousa, Itaporanga, Brumado, Barra da
-Estiva e Caculé** fez, em dois painéis:
+Estiva e Caculé** fez, em quatro abas:
 
 - **Vespertina · pedidos do dia** — o fechamento da tarde: quais tarefas os pedidos digitados hoje fecharam.
 - **Mês · faturado** — tarefas **validadas no BEES** no mês (só a validação oficial conclui), cada uma com as
@@ -11,6 +11,9 @@ Estiva e Caculé** fez, em dois painéis:
   nota fiscal de cada uma. Separa **atrasadas** (pedido a partir da visita, nota entregue há 2+ dias antes do
   export do BEES: já deveriam estar validadas), **recentes** (o BEES ainda pode validar) e **compra antes da
   visita** (o BEES costuma não considerar). Missões e desafios do BEES ficam fora.
+- **Desafios GV · meta x real** — os "Desafios do dia" de cada setor (só as colunas de tarefas: Cerveja, NAB,
+  Marketplace, LN, SKU/PDV, Score 5) contra o real do dia: tarefas **validadas no BEES** no dia (quando o export já
+  cobre o dia) ou a **prévia** pelos pedidos do dia.
 
 O analista roda o fechamento no VS Code e publica. RNs e GVs abrem o link
 <https://fechamento-de-tasks-de-compra-no-be.vercel.app> (acesso livre, sem senha) e veem o resultado, com
@@ -66,6 +69,12 @@ minutos. Configuração do projeto no Vercel (já feita): framework Vite, build 
 > recusa a enviar qualquer `.csv` ou `.xlsx`.
 
 ## Rotina do fechamento (todo dia)
+
+**Desafios dos GVs:** salve as imagens do relatório "Desafios do dia" do BEES em `DesafiosDiariosGVs/` e o CSV do
+dia `desafios-AAAA-MM-DD.csv` com as colunas `Data;UNB;GV;Setor;Desafio;Meta` (uma linha por setor e coluna do
+desafio, com o título da coluna como aparece no BEES). As colunas de Volume/Faturamento podem ficar no arquivo:
+são ignoradas. A pasta fica só no computador (não vai para o Git); o fechamento recalcula todos os dias da pasta,
+então as validadas no BEES de ontem aparecem quando chega o export de tarefas de hoje.
 
 Pelo menu **Terminal → Executar Tarefa…** do VS Code (ou `Ctrl+Shift+B` para a primeira):
 

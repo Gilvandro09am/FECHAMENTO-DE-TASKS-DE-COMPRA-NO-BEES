@@ -169,6 +169,51 @@ export interface ArquivoDivergencias {
   linhas: Divergencia[];
 }
 
+
+// ---------------------------------------------------------------------------
+// Desafios diários dos GVs (aba "Desafios GV")
+// ---------------------------------------------------------------------------
+export const TIPOS_DESAFIO = ['cerveja', 'nab', 'marketplace', 'ln', 'skupdv', 'score5'] as const;
+export type TipoDesafio = (typeof TIPOS_DESAFIO)[number];
+
+export const NOME_DESAFIO: Record<TipoDesafio, string> = {
+  cerveja: 'Cerveja',
+  nab: 'NAB',
+  marketplace: 'Marketplace',
+  ln: 'LN',
+  skupdv: 'SKU/PDV',
+  score5: 'Score 5',
+};
+
+export interface ValorDesafio {
+  meta: number;
+  /** Tarefas que os pedidos do dia fecharam (vespertina). null = sem vespertina desse dia. */
+  previa: number | null;
+  /** Tarefas validadas no BEES com data de conclusão no dia. null = export do BEES ainda não cobre o dia. */
+  validadas: number | null;
+}
+
+export interface SetorDesafio {
+  id: string;
+  unb: string;
+  gv: string;
+  setor: string;
+  revenda: string;
+  nb: string;
+  tipos: Partial<Record<TipoDesafio, ValorDesafio>>;
+}
+
+export interface ArquivoDesafios {
+  versao: number;
+  dia: string;
+  geradoEm: string;
+  /** UNB → última data de validação no export do BEES (a partir dela as validadas do dia são definitivas). */
+  referencia: Record<string, string>;
+  /** Há vespertina (pedidos do dia) para este dia. */
+  temPrevia: boolean;
+  setores: SetorDesafio[];
+}
+
 export interface IndiceDia {
   /** AAAA-MM-DD (dia) ou AAAA-MM (mês). */
   chave: string;
@@ -185,4 +230,6 @@ export interface Indice {
   meses: IndiceDia[];
   /** Meses que têm arquivo de divergências (data/divergencias/AAAA-MM.json). */
   divergencias?: { chave: string; total: number; atrasadas: number }[];
+  /** Dias com desafios dos GVs (data/desafios/AAAA-MM-DD.json). */
+  desafios?: { chave: string; setores: number }[];
 }

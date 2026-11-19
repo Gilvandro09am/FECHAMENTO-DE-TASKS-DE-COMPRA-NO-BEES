@@ -29,6 +29,10 @@ import {
   lerFaturados,
   lerPedidos,
   lerTarefas,
+  lerCsvDesafios,
+  montarDesafios,
+  NOME_DESAFIO,
+  TIPOS_DESAFIO,
   montarDivergencias,
   montarFechamento,
   NAO_RECONHECIDA,
@@ -168,7 +172,7 @@ function lerIndice(): Indice {
   const i = JSON.parse(fs.readFileSync(arq, 'utf8')) as Partial<Indice>;
   // Fechamentos de versões antigas do modelo não abrem no painel novo: saem do índice e da pasta.
   if (i.versao !== VERSAO_MODELO) {
-    for (const pasta of ['dias', 'meses', 'divergencias']) fs.rmSync(path.join(CONFIG.pastaDados, pasta), { recursive: true, force: true });
+    for (const pasta of ['dias', 'meses', 'divergencias', 'desafios']) fs.rmSync(path.join(CONFIG.pastaDados, pasta), { recursive: true, force: true });
     return vazio;
   }
   return { ...vazio, ...i };
@@ -284,7 +288,7 @@ function fechamentoDia(
   base: { cesta: string; tarefas: string[] },
   cadastro: Cadastro,
   indice: Indice,
-) {
+): { dia: string; resultados: Resultado[] } {
   console.log(cor.forte('\n  ▸ Vespertina — pedidos do dia'));
   avisarSemCesta(itens, 'dos pedidos');
   const unbsTarefa = new Set(tarefas.map((t) => t.unb));
@@ -319,6 +323,65 @@ function fechamentoDia(
   });
   resumir(f, resultados);
   console.log(cor.ok(`  ✔ Gravado ${gravar(f, indice)}`));
+  return { dia, resultados };
+}
+
+/**
+ * Desafios diários dos GVs: lê os CSVs de DesafiosDiariosGVs/ e compara a meta de tarefas de cada setor com
+ * a prévia (pedidos do dia) e com as validadas no BEES no dia. Recalcula todos os dias a cada fechamento:
+ * as validadas de ontem aparecem quando chega o export de tarefas de hoje.
+ */
+function processarDesafios(tarefas: Tarefa[], vesp: { dia: string; resultados: Resultado[] } | null, cadastro: Cadastro, indice: Indice) {
+  const pasta = CONFIG.pastaDesafios;
+  const csvs = fs.existsSync(pasta) ? fs.readdirSync(pasta).filter((f) => /\.csv$/i.test(f)) : [];
+  if (!csvs.length) return;
+  console.log(cor.forte('\n  ▸ Desafios dos GVs — meta de tarefas x real do dia'));
+  const entrada = [];
+  const ignoradas = new Set<string>();
+  for (const arq of csvs) {
+    const r = lerCsvDesafios(fs.readFileSync(path.join(pasta, arq), 'utf8'));
+    entrada.push(...r.linhas);
+    r.ignoradas.forEach((x) => ignoradas.add(x));
+  }
+  if (ignoradas.size) console.log(`  Colunas que não são de tarefa (ignoradas): ${[...ignoradas].join(' · ')}`);
+  const dir = path.join(CONFIG.pastaDados, 'desafios');
+  fs.mkdirSync(dir, { recursive: true });
+  const lista: { chave: string; setores: number }[] = [];
+  for (const dia of [...new Set(entrada.map((l) => l.dia))].sort()) {
+    const d = montarDesafios(entrada, tarefas, vesp && vesp.dia === dia ? vesp.resultados : null, {
+      dia,
+      versao: VERSAO_MODELO,
+      revendas: NOME_REVENDA,
+      nb: cadastro.nb,
+    });
+    // Dia passado: a prévia (pedidos do dia) é a que foi calculada naquele dia.
+    const arq = path.join(dir, `${dia}.json`);
+    if (!d.temPrevia && fs.existsSync(arq)) {
+      const antigo = JSON.parse(fs.readFileSync(arq, 'utf8')) as typeof d;
+      if (antigo.temPrevia) {
+        d.temPrevia = true;
+        for (const s of d.setores) {
+          const a = antigo.setores.find((x) => x.id === s.id);
+          for (const [tipo, v] of Object.entries(s.tipos)) v.previa = a?.tipos[tipo as keyof typeof a.tipos]?.previa ?? null;
+        }
+      }
+    }
+    fs.writeFileSync(arq, JSON.stringify(d));
+    lista.push({ chave: dia, setores: d.setores.length });
+    const tot = TIPOS_DESAFIO.map((t) => {
+      const vs = d.setores.map((s) => s.tipos[t]).filter(Boolean);
+      if (!vs.length) return '';
+      const meta = vs.reduce((a, v) => a + v!.meta, 0);
+      const prev = vs.reduce((a, v) => a + (v!.previa ?? 0), 0);
+      const val = vs.every((v) => v!.validadas != null) ? vs.reduce((a, v) => a + v!.validadas!, 0) : null;
+      return `${NOME_DESAFIO[t]} ${fmt(meta)} → ${d.temPrevia ? fmt(prev) : '—'}${val != null ? ` (BEES ${fmt(val)})` : ''}`;
+    }).filter(Boolean);
+    console.log(`  ${dataBr(dia)} · ${d.setores.length} setores · meta → prévia (validadas BEES): ${tot.join(' · ')}`);
+  }
+  lista.sort((a, b) => b.chave.localeCompare(a.chave));
+  for (const velho of lista.splice(CONFIG.diasNoHistorico)) fs.rmSync(path.join(dir, `${velho.chave}.json`), { force: true });
+  indice.desafios = lista;
+  console.log(cor.ok(`  ✔ Gravado ${path.join('public', 'data', 'desafios')}`));
 }
 
 /** Tarefas abertas no BEES que o faturado já comprova: arquivo da aba "Divergências". */
@@ -519,8 +582,9 @@ async function main() {
   fs.mkdirSync(CONFIG.pastaBase, { recursive: true });
   fs.writeFileSync(arqNb, JSON.stringify(cadastro.nb, null, 1));
   const indice = lerIndice();
-  if (arqPedidos) fechamentoDia(args, tarefas, itensDia, itensMes, arqPedidos, base, cadastro, indice);
+  const vesp = arqPedidos ? fechamentoDia(args, tarefas, itensDia, itensMes, arqPedidos, base, cadastro, indice) : null;
   if (arqFaturados && args.fazerMes) fechamentoMes(tarefas, itensMes, arqFaturados, base, cadastro, indice);
+  processarDesafios(tarefas, vesp, cadastro, indice);
 
   indice.versao = VERSAO_MODELO;
   indice.atualizadoEm = new Date().toISOString();

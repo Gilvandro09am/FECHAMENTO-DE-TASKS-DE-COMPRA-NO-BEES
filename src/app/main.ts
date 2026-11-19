@@ -13,13 +13,17 @@ import {
   type Fechamento,
   type Indicador,
   type Indice,
+  type ArquivoDesafios,
   type ArquivoDivergencias,
+  NOME_DESAFIO,
+  TIPOS_DESAFIO,
+  type TipoDesafio,
   type IndiceDia,
   type ItemProva,
   type PdvFechamento,
   type TipoFechamento,
 } from '../shared/modelo';
-import { calcular, setoresFiltrados, type Filtros, type LinhaSetor, type Totais } from './agregacao';
+import { calcular, filtrarSetores, setoresFiltrados, type Filtros, type LinhaSetor, type Totais } from './agregacao';
 import {
   agruparDivergencias,
   CAB_DIV,
@@ -112,18 +116,25 @@ const TXT: Record<
 };
 
 // ---------- estado (espelhado na URL para links diretos por setor) ----------
-/** dia = vespertina · mes = faturado · div = divergências (abertas no BEES que o faturado já comprova). */
-type Modo = TipoFechamento | 'div';
+/**
+ * dia = vespertina · mes = faturado · div = divergências (abertas no BEES que o faturado já comprova)
+ * des = desafios diários dos GVs (meta de tarefas x real do dia).
+ */
+type Modo = TipoFechamento | 'div' | 'des';
+/** Real dos desafios: auto = validadas no BEES quando o export já cobre o dia, senão a prévia dos pedidos. */
+type FonteReal = 'auto' | 'previa' | 'bees';
 interface Estado extends Filtros {
   modo: Modo;
   sit: Situacao;
+  real: FonteReal;
   chave: string;
   aberto: string | null; // id do setor com a gaveta aberta
   ordem: { k: string; d: 1 | -1 };
 }
 const url = new URLSearchParams(location.search);
 const EST: Estado = {
-  modo: url.get('m') === 'mes' ? 'mes' : url.get('m') === 'div' ? 'div' : 'dia',
+  modo: (['mes', 'div', 'des'] as const).find((m) => m === url.get('m')) ?? 'dia',
+  real: (['previa', 'bees'] as const).find((m) => m === url.get('real')) ?? 'auto',
   sit: url.get('sit') === 'todas' ? 'todas' : 'atrasadas',
   chave: url.get('dia') ?? url.get('mes') ?? '',
   op: url.get('op') ?? 'todas',
@@ -135,15 +146,22 @@ const EST: Estado = {
   ordem: { k: 'feitas', d: -1 },
 };
 const listaDe = (m: Modo): IndiceDia[] =>
-  m === 'dia' ? INDICE!.dias : m === 'mes' ? INDICE!.meses : INDICE!.meses.filter((x) => INDICE!.divergencias?.some((d) => d.chave === x.chave));
+  m === 'dia'
+    ? INDICE!.dias
+    : m === 'mes'
+      ? INDICE!.meses
+      : m === 'des'
+        ? (INDICE!.desafios ?? []).map((d) => ({ chave: d.chave, dia: d.chave, geradoEm: '', feitas: d.setores, pdvComPedido: 0 }))
+        : INDICE!.meses.filter((x) => INDICE!.divergencias?.some((d) => d.chave === x.chave));
 const listaDoModo = () => listaDe(EST.modo);
-const tipoDo = (m: Modo): TipoFechamento => (m === 'dia' ? 'dia' : 'mes');
+const tipoDo = (m: Modo): TipoFechamento => (m === 'dia' || m === 'des' ? 'dia' : 'mes');
 
 function gravarUrl() {
   const p = new URLSearchParams();
   if (EST.modo !== 'dia') p.set('m', EST.modo);
   if (EST.modo === 'div' && EST.sit === 'todas') p.set('sit', 'todas');
-  if (EST.chave && EST.chave !== listaDoModo()[0]?.chave) p.set(EST.modo === 'dia' ? 'dia' : 'mes', EST.chave);
+  if (EST.modo === 'des' && EST.real !== 'auto') p.set('real', EST.real);
+  if (EST.chave && EST.chave !== listaDoModo()[0]?.chave) p.set(EST.modo === 'mes' || EST.modo === 'div' ? 'mes' : 'dia', EST.chave);
   if (EST.op && EST.op !== 'todas') p.set('op', EST.op);
   if (EST.rev !== 'todas') p.set('rev', EST.rev);
   if (EST.gv !== 'todos') p.set('gv', EST.gv);
@@ -169,12 +187,26 @@ async function buscarJson<T>(caminho: string): Promise<T> {
 let DIV: ArquivoDivergencias | null = null;
 const cacheDiv = new Map<string, ArquivoDivergencias>();
 
+let DES: ArquivoDesafios | null = null;
+const cacheDes = new Map<string, ArquivoDesafios>();
+
 async function carregar(modo: Modo, chave: string) {
   const tipo = tipoDo(modo);
-  const k = `${tipo}/${chave}`;
+  if (modo === 'des') {
+    let d = cacheDes.get(chave);
+    if (!d) {
+      d = await buscarJson<ArquivoDesafios>(`data/desafios/${chave}.json`);
+      cacheDes.set(chave, d);
+    }
+    DES = d;
+  }
+  // Desafios usam a vespertina do mesmo dia (ou a mais recente) só como apoio do cabeçalho.
+  const chaveF = modo === 'des' ? (INDICE!.dias.find((x) => x.chave === chave) ?? INDICE!.dias[0] ?? INDICE!.meses[0]).chave : chave;
+  const tipoF = modo === 'des' && !INDICE!.dias.length ? 'mes' : tipo;
+  const k = `${tipoF}/${chaveF}`;
   let f = cache.get(k);
   if (!f) {
-    f = await buscarJson<Fechamento>(`data/${TXT[tipo].pasta}/${chave}.json`);
+    f = await buscarJson<Fechamento>(`data/${TXT[tipoF].pasta}/${chaveF}.json`);
     cache.set(k, f);
   }
   if (modo === 'div') {
@@ -227,8 +259,12 @@ function detalheDoSetor(setorId: string): DetalheSetor | 'carregando' | 'erro' {
 }
 
 // ---------- render ----------
+/** Setores que alimentam os filtros: os do desafio na aba Desafios, os do fechamento nas demais. */
+const setoresBase = (): { id: string; unb: string; revenda: string; gv: string; setor: string; nb: string }[] =>
+  EST.modo === 'des' && DES ? DES.setores : F!.setores;
+
 function revendas() {
-  return [...new Set(F!.setores.map((s) => s.revenda))].sort();
+  return [...new Set(setoresBase().map((s) => s.revenda))].sort();
 }
 
 function renderControles() {
@@ -236,6 +272,7 @@ function renderControles() {
     ['dia', 'Vespertina · pedidos do dia'],
     ['mes', 'Mês · faturado'],
     ['div', 'Divergências · abertas no BEES'],
+    ['des', 'Desafios GV · meta x real'],
   ];
   $('segModo').innerHTML = ABAS.map(
     ([m, nome]) =>
@@ -246,12 +283,15 @@ function renderControles() {
       if (EST.modo === 'dia') return `<option value="${d.chave}">${dataBr(d.dia)} · ${diaSemana(d.dia)} · ${fmt(d.feitas)} feitas</option>`;
       if (EST.modo === 'mes')
         return `<option value="${d.chave}">${mesBr(d.chave)} · entregas até ${dataBr(d.dia)} · ${fmt(d.feitas)} validadas</option>`;
+      if (EST.modo === 'des') return `<option value="${d.chave}">${dataBr(d.chave)} · ${diaSemana(d.chave)} · ${fmt(d.feitas)} setores</option>`;
       const dv = INDICE!.divergencias?.find((x) => x.chave === d.chave);
       return `<option value="${d.chave}">${mesBr(d.chave)} · ${fmt(dv?.atrasadas ?? 0)} atrasadas</option>`;
     })
     .join('');
   $<HTMLSelectElement>('selDia').value = EST.chave;
-  $('lblDia').textContent = EST.modo === 'dia' ? 'Fechamento' : 'Mês';
+  $('lblDia').textContent = EST.modo === 'dia' || EST.modo === 'des' ? 'Dia' : 'Mês';
+  // Os desafios não são por indicador do painel: o filtro de indicador some nessa aba.
+  $<HTMLElement>('selInd').closest<HTMLElement>('.ctl')!.hidden = EST.modo === 'des';
 
   // Operação → revendas da operação → GVs das revendas mostradas.
   const todasRevs = revendas();
@@ -272,7 +312,7 @@ function renderControles() {
     .join('');
 
   // GV consolidado por operação: "Sousa · GV 2" junta o GV 2 de Sousa e de Itaporanga.
-  const doFiltro = F!.setores.filter((s) => revs.includes(s.revenda) && (EST.rev === 'todas' || s.revenda === EST.rev));
+  const doFiltro = setoresBase().filter((s) => revs.includes(s.revenda) && (EST.rev === 'todas' || s.revenda === EST.rev));
   const gvs = [...new Map(doFiltro.map((s) => [chaveGv(s), s])).values()].sort(
     (a, b) => operacaoDa(a.revenda).localeCompare(operacaoDa(b.revenda)) || +a.gv - +b.gv,
   );
@@ -518,7 +558,12 @@ function provaLinha(it: ItemProva): string {
 
 function render() {
   if (!F) return;
-  $('segSit').hidden = EST.modo !== 'div';
+  $('segSit').hidden = EST.modo !== 'div' && EST.modo !== 'des';
+  if (EST.modo === 'des') {
+    renderDes();
+    gravarUrl();
+    return;
+  }
   if (EST.modo === 'div') {
     renderDiv();
     gravarUrl();
@@ -699,6 +744,194 @@ function tabelaDivTexto(sep: string): string {
   return [cab.map(q).join(sep), ...linhas].join('\n');
 }
 
+// ---------- aba Desafios GV ----------
+type SetorDes = ArquivoDesafios['setores'][number];
+const exportCobre = (s: { unb: string }) => (DES!.referencia[s.unb] ?? '') >= DES!.dia;
+
+/** Real usado na comparação e de onde veio. */
+function realDe(s: SetorDes, t: TipoDesafio): { v: number | null; fonte: 'BEES' | 'prévia' | '' } {
+  const x = s.tipos[t];
+  if (!x) return { v: null, fonte: '' };
+  if (EST.real === 'bees') return { v: x.validadas, fonte: x.validadas == null ? '' : 'BEES' };
+  if (EST.real === 'previa') return { v: x.previa, fonte: x.previa == null ? '' : 'prévia' };
+  return x.validadas != null ? { v: x.validadas, fonte: 'BEES' } : { v: x.previa, fonte: x.previa == null ? '' : 'prévia' };
+}
+
+const classeAting = (real: number | null, meta: number) =>
+  real == null ? 'na' : meta <= 0 ? 'ok' : real >= meta ? 'ok' : real >= 0.7 * meta ? 'warn' : 'bad';
+
+function desFiltrados() {
+  return filtrarSetores(DES!.setores, EST);
+}
+
+function renderDes() {
+  const a = DES!;
+  const setores = desFiltrados();
+  const tipos = TIPOS_DESAFIO.filter((t) => setores.some((s) => s.tipos[t]));
+  document.title = 'Desafios dos GVs';
+  $('ebrow').textContent = 'Pau Brasil · ' + revendas().join(' · ');
+  $('h1').innerHTML = 'Desafios dos GVs <span>meta x real do dia</span>';
+  const semExport = [...new Set(setores.filter((s) => !exportCobre(s)).map((s) => s.revenda))];
+  $('src').innerHTML =
+    `Desafios de tarefas de <b>${dataBr(a.dia)} (${diaSemana(a.dia)})</b>. Real = tarefas <b>validadas no BEES</b> no dia ` +
+    `(quando o export de tarefas já cobre o dia) ou a <b>prévia</b> pelos pedidos do dia.` +
+    (semExport.length ? ` Export do BEES ainda sem ${dataBr(a.dia)}: ${semExport.map(esc).join(', ')}.` : '');
+  $('foot').innerHTML =
+    'Só as colunas de tarefas dos desafios entram; Volume/Faturamento fica de fora. Colunas: Cerveja = Portfólio de categoria Cerveja; ' +
+    'NAB = Portfólio de NAB; Marketplace; LN = cesta LN HE (export de Long Neck); SKU/PDV = cluster secundário SKU/PDV; ' +
+    'Score 5 = tarefas "[Score 5]". As colunas se sobrepõem, como no BEES (uma tarefa de SKUs de cerveja conta em Cerveja e em SKU/PDV).';
+
+  // Totais por coluna de desafio
+  const tot = tipos.map((t) => {
+    let meta = 0,
+      real = 0,
+      comReal = 0,
+      batidos = 0,
+      n = 0;
+    for (const s of setores) {
+      const x = s.tipos[t];
+      if (!x) continue;
+      n++;
+      meta += x.meta;
+      const r = realDe(s, t).v;
+      if (r != null) {
+        comReal++;
+        real += r;
+        if (r >= x.meta) batidos++;
+      }
+    }
+    return { t, meta, real, comReal, batidos, n };
+  });
+  const metaTot = tot.reduce((x, y) => x + y.meta, 0);
+  const realTot = tot.reduce((x, y) => x + y.real, 0);
+  const pares = tot.reduce((x, y) => x + y.n, 0);
+  const batidos = tot.reduce((x, y) => x + y.batidos, 0);
+  const fontes = new Set(setores.flatMap((s) => tipos.map((t) => realDe(s, t).fonte)).filter(Boolean));
+  $('kpis').innerHTML = `
+    <div class="kpi lead"><div class="k">Atingimento do dia</div><div class="v">${pct(metaTot ? realTot / metaTot : null, 0)}</div><div class="s">${fmt(realTot)} tarefas de ${fmt(metaTot)} da meta</div></div>
+    <div class="kpi"><div class="k">Metas batidas</div><div class="v">${fmt(batidos)} <small>/ ${fmt(pares)}</small></div><div class="s">desafios de setor (setor × coluna) com real ≥ meta</div></div>
+    <div class="kpi"><div class="k">Setores com desafio</div><div class="v">${fmt(setores.length)}</div><div class="s">${[...new Set(setores.map((s) => `GV ${s.gv} ${s.revenda}`))].length} GVs/revendas no filtro</div></div>
+    <div class="kpi"><div class="k">Fonte do real</div><div class="v" style="font-size:26px">${fontes.size ? [...fontes].join(' + ') : 'sem dados'}</div><div class="s">BEES = validadas no dia · prévia = pedidos do dia</div></div>`;
+
+  const mx = Math.max(1, ...tot.map((x) => Math.max(x.meta, x.real)));
+  $('ind').innerHTML =
+    '<div class="grp">Colunas de tarefas do desafio</div>' +
+    tot
+      .map(
+        (x) => `<div class="bar"><span class="nm">${NOME_DESAFIO[x.t]}</span>
+      <span class="tr"><i style="width:${(x.meta / mx) * 100}%"></i><b style="width:${(x.real / mx) * 100}%"></b></span>
+      <span class="n">${fmt(x.real)} <small>/ ${fmt(x.meta)} · ${pct(x.meta ? x.real / x.meta : null)}</small></span></div>`,
+      )
+      .join('');
+  $('legF').textContent = 'Real do dia';
+  $('legB').textContent = 'Meta do desafio';
+
+  $('segSit').innerHTML = (
+    [
+      ['auto', 'Real: automático'],
+      ['previa', 'Prévia (pedidos)'],
+      ['bees', 'Validadas BEES'],
+    ] as const
+  )
+    .map(([k, l]) => `<button type="button" data-real="${k}" aria-pressed="${EST.real === k}">${l}</button>`)
+    .join('');
+  renderDesTabela(setores, tipos);
+}
+
+function renderDesTabela(setores: SetorDes[], tipos: TipoDesafio[]) {
+  const { k, d } = EST.ordem;
+  const ating = (s: SetorDes) => {
+    let m = 0,
+      r = 0;
+    for (const t of tipos) {
+      const x = s.tipos[t];
+      const v = realDe(s, t).v;
+      if (x && v != null) {
+        m += x.meta;
+        r += v;
+      }
+    }
+    return m ? r / m : -1;
+  };
+  const valor = (s: SetorDes): number | string =>
+    k === 'rev' ? s.revenda : k === 'nb' ? s.nb : k === 'gv' ? +s.gv : k === 'setor' ? +s.setor : k.startsWith('t:') ? (realDe(s, k.slice(2) as TipoDesafio).v ?? -1) : ating(s);
+  const linhas = [...setores].sort((a, b) => {
+    const va = valor(a),
+      vb = valor(b);
+    const c = typeof va === 'string' ? va.localeCompare(String(vb)) : va - (vb as number);
+    return c * d || +a.setor - +b.setor;
+  });
+  const cols = [
+    { k: 'setor', l: 'Setor', c: 'l fix' },
+    { k: 'rev', l: 'Revenda', c: 'l' },
+    { k: 'gv', l: 'GV' },
+    { k: 'nb', l: 'NB', c: 'l' },
+    ...tipos.map((t) => ({ k: 't:' + t, l: `${NOME_DESAFIO[t]} <small>real / meta</small>`, c: '' })),
+    { k: 'feitas', l: 'Atingimento' },
+  ];
+  let h = '<thead><tr>';
+  for (const c of cols) {
+    const on = k === c.k;
+    h += `<th class="${c.c ?? ''}${on ? ' sorted' : ''}" data-k="${c.k}">${c.l}${on ? (d > 0 ? ' ↑' : ' ↓') : ''}</th>`;
+  }
+  h += '</tr></thead><tbody>';
+  if (!linhas.length) h += `<tr><td colspan="${cols.length}" class="l empty">Nenhum setor com desafio nesses filtros.</td></tr>`;
+  for (const s of linhas) {
+    const at = ating(s);
+    h += `<tr class="row${EST.aberto === s.id ? ' open' : ''}" data-id="${s.id}" tabindex="0">
+      <td class="l fix"><b>${s.setor}</b></td><td class="l"><span class="rev">${esc(s.revenda)}</span></td><td>${s.gv}</td>
+      <td class="l"><span class="nb" title="${esc(s.nb)}">${esc(s.nb) || '—'}</span></td>
+      ${tipos
+        .map((t) => {
+          const x = s.tipos[t];
+          if (!x) return '<td class="z">·</td>';
+          const r = realDe(s, t);
+          return `<td><span class="des ${classeAting(r.v, x.meta)}" title="Meta ${num(x.meta)} · prévia ${x.previa ?? '—'} · validadas BEES ${x.validadas ?? 'aguardando export'}">${r.v ?? '—'} <small>/ ${num(x.meta)}</small></span></td>`;
+        })
+        .join('')}
+      <td class="tot">${at < 0 ? '—' : pct(at)}</td></tr>`;
+  }
+  h += '</tbody>';
+  $('tbl').innerHTML = h;
+  const aberto = linhas.find((s) => s.id === EST.aberto);
+  $('drawer').innerHTML = aberto ? gavetaDes(aberto, tipos) : '';
+}
+
+function gavetaDes(s: SetorDes, tipos: TipoDesafio[]): string {
+  const ref = DES!.referencia[s.unb];
+  let h = `<div class="drawer"><div class="top"><h3>Setor ${s.setor} · ${esc(s.revenda)} · GV ${s.gv}${s.nb ? ' · ' + esc(s.nb) : ''}</h3>
+    <div class="toolbar"><button class="btn small" data-acao="link" type="button">Copiar link do setor</button><button class="btn small" data-acao="fechar" type="button">Fechar</button></div></div>
+    <div class="sub">Desafio de ${dataBr(DES!.dia)} · export do BEES com validações até ${ref ? dataBr(ref) : '—'}</div>
+    <table class="mini"><thead><tr><th class="l">Coluna do desafio</th><th>Meta</th><th>Prévia (pedidos do dia)</th><th>Validadas no BEES no dia</th><th>Falta</th></tr></thead><tbody>`;
+  for (const t of tipos) {
+    const x = s.tipos[t];
+    if (!x) continue;
+    const r = realDe(s, t).v;
+    h += `<tr><td class="l">${NOME_DESAFIO[t]}</td><td>${num(x.meta)}</td><td>${x.previa ?? '—'}</td>
+      <td>${x.validadas ?? '<small class="muted">aguardando export</small>'}</td>
+      <td><span class="des ${classeAting(r, x.meta)}">${r == null ? '—' : r >= x.meta ? 'bateu' : num(x.meta - r)}</span></td></tr>`;
+  }
+  return h + '</tbody></table></div>';
+}
+
+function tabelaDesTexto(sep: string): string {
+  const q = (v: unknown) => (sep === ';' && /[;"\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+  const cab = ['Dia', 'Operação', 'Revenda', 'UNB', 'GV', 'Setor', 'NB', 'Desafio', 'Meta', 'Prévia (pedidos do dia)', 'Validadas BEES no dia', 'Real usado', 'Fonte', '% atingido'];
+  const linhas: string[] = [];
+  for (const s of desFiltrados())
+    for (const t of TIPOS_DESAFIO) {
+      const x = s.tipos[t];
+      if (!x) continue;
+      const r = realDe(s, t);
+      linhas.push(
+        [dataBr(DES!.dia), operacaoDa(s.revenda), s.revenda, s.unb, s.gv, s.setor, s.nb, NOME_DESAFIO[t], num(x.meta), x.previa ?? '', x.validadas ?? '', r.v ?? '', r.fonte, r.v == null || !x.meta ? '' : pct(r.v / x.meta)]
+          .map(q)
+          .join(sep),
+      );
+    }
+  return [cab.map(q).join(sep), ...linhas].join('\n');
+}
+
 // ---------- exportação ----------
 function tabelaTexto(sep: string): string {
   const f = F!;
@@ -874,16 +1107,20 @@ function ligarEventos() {
   });
   $('segSit').addEventListener('click', (e) => {
     const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
-    if (!b || b.dataset.sit === EST.sit) return;
-    EST.sit = b.dataset.sit as Situacao;
+    if (!b) return;
+    if (b.dataset.real) EST.real = b.dataset.real as FonteReal;
+    else if (b.dataset.sit) EST.sit = b.dataset.sit as Situacao;
     render();
   });
   $('bCsv').addEventListener('click', () =>
-    EST.modo === 'div'
+    EST.modo === 'des'
+      ? baixar(`desafios-gv-${DES!.dia}.csv`, tabelaDesTexto(';'))
+      : EST.modo === 'div'
       ? baixar(`divergencias-bees-${DIV!.mes}-por-setor.csv`, tabelaDivTexto(';'))
       : baixar(`tasks-compra-${F!.tipo}-${F!.chave}.csv`, tabelaTexto(';')),
   );
   $('bCsvPdv').addEventListener('click', (e) => {
+    if (EST.modo === 'des') return baixar(`desafios-gv-${DES!.dia}.csv`, tabelaDesTexto(';'));
     if (EST.modo === 'div') {
       const res = divAtual();
       if (!res.linhas.length) return toast('Nenhuma divergência com esses filtros.');
@@ -897,7 +1134,10 @@ function ligarEventos() {
     void baixarCsvPdv(setores, nomeArquivo(`tasks-pdv-${F!.tipo}-${F!.chave}-${rev}`) + '.csv', e.currentTarget as HTMLButtonElement);
   });
   $('bCopy').addEventListener('click', () =>
-    void copiar(EST.modo === 'div' ? tabelaDivTexto('\t') : tabelaTexto('\t'), 'Tabela copiada. Cole no Excel.'),
+    void copiar(
+      EST.modo === 'des' ? tabelaDesTexto('\t') : EST.modo === 'div' ? tabelaDivTexto('\t') : tabelaTexto('\t'),
+      'Tabela copiada. Cole no Excel.',
+    ),
   );
   $('bRules').addEventListener('click', () => {
     const c = $('rulesCard');

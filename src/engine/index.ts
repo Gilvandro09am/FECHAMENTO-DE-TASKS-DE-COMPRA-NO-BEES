@@ -4,3 +4,4 @@ export * from './regras';
 export * from './avaliar';
 export * from './leitura';
 export * from './publicacao';
+export * from './desafios';

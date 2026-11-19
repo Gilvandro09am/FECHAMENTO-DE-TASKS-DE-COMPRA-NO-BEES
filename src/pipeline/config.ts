@@ -24,6 +24,11 @@ export const REVENDAS = [
 export const CONFIG = {
   /** Onde o analista coloca os exports do dia. */
   pastaEntrada: path.join(raiz, 'entrada'),
+  /**
+   * Desafios diários dos GVs: imagens do BEES e um CSV por dia (desafios-AAAA-MM-DD.csv, colunas
+   * Data;UNB;GV;Setor;Desafio;Meta). Fica fora do Git; só a comparação calculada é publicada.
+   */
+  pastaDesafios: path.join(raiz, 'DesafiosDiariosGVs'),
   /** Cópia da última cesta usada, para não precisar enviar todo dia. */
   pastaBase: path.join(raiz, 'base'),
   /** Saída lida pelo painel. */

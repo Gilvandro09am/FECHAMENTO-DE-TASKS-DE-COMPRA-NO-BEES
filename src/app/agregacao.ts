@@ -62,8 +62,13 @@ const feitasDe = (c: Contagem, mes: boolean) => (mes ? c[C_VALIDADAS] : c[C_FEIT
 const baseDe = (c: Contagem, mes: boolean) => c[C_ABERTAS] + (mes ? c[C_VALIDADAS] : 0);
 
 export function setoresFiltrados(f: Fechamento, filtros: Filtros): SetorFechamento[] {
+  return filtrarSetores(f.setores, filtros);
+}
+
+/** Filtro de operação, revenda, GV (consolidado por operação) e busca por setor/NB, para qualquer lista de setores. */
+export function filtrarSetores<T extends { revenda: string; gv: string; setor: string; nb: string }>(lista: T[], filtros: Filtros): T[] {
   const q = norm(filtros.busca);
-  return f.setores.filter(
+  return lista.filter(
     (s) =>
       (!filtros.op || filtros.op === 'todas' || operacaoDa(s.revenda) === filtros.op) &&
       (filtros.rev === 'todas' || s.revenda === filtros.rev) &&
