@@ -25,6 +25,11 @@ export const CONFIG = {
   /** Onde o analista coloca os exports do dia. */
   pastaEntrada: path.join(raiz, 'entrada'),
   /**
+   * Pasta de rede com o faturado do Promax (03.02.37.csv), atualizada todo dia pelo Power BI.
+   * Vale o arquivo mais recente entre esta pasta e entrada/. Sem acesso à rede, usa o de entrada/ (se houver).
+   */
+  pastaFaturadoRede: 'Z:/VENDAS/APR/Power BI/Fato/03.02.37',
+  /**
    * Desafios diários dos GVs: imagens do BEES e um CSV por dia (desafios-AAAA-MM-DD.csv, colunas
    * Data;UNB;GV;Setor;Desafio;Meta). Fica fora do Git; só a comparação calculada é publicada.
    */

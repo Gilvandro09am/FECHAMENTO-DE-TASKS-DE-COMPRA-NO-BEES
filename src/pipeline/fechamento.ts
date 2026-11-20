@@ -535,6 +535,23 @@ function gravarDiagnostico(r: ReturnType<typeof avaliarMes>, itens: ItemPedido[]
   console.log(`    Diagnóstico gravado em ${arq} (${fmt(grupos.length)} textos).`);
 }
 
+/** Faturado mais recente entre a pasta de rede (Power BI) e a pasta entrada/. */
+function escolherFaturado(local: string | null): string | null {
+  const rede = CONFIG.pastaFaturadoRede;
+  let daRede: string | null = null;
+  try {
+    daRede = fs.existsSync(rede) ? classificarCsvs(rede).faturados : null;
+  } catch {
+    daRede = null;
+  }
+  if (!daRede) {
+    console.log(cor.aviso(`  ! Sem acesso ao faturado da rede (${rede}): ${local ? 'usando o de entrada/' : 'nenhum faturado encontrado'}.`));
+    return local;
+  }
+  if (local && fs.statSync(local).mtimeMs > fs.statSync(daRede).mtimeMs) return local;
+  return daRede;
+}
+
 async function main() {
   const t0 = Date.now();
   const args = argumentos();
@@ -544,7 +561,7 @@ async function main() {
   const csvs = classificarCsvs(CONFIG.pastaEntrada);
   const arqPedidos = args.fazerDia ? csvs.pedidos : null;
   // O faturado é lido mesmo com --so-dia: a vespertina usa o acumulado do mês nas tarefas mensais.
-  const arqFaturados = csvs.faturados;
+  const arqFaturados = escolherFaturado(csvs.faturados);
   if (!csvs.pedidos && !csvs.faturados)
     throw new ErroFechamento(
       'Não achei nenhum .csv de pedidos do dia (colunas "Número pedido", "Cód. unidade venda"…) nem de faturados ' +
@@ -566,7 +583,8 @@ async function main() {
 
   let itensMes: ItemPedido[] = [];
   if (arqFaturados) {
-    console.log(`  Faturados ${path.basename(arqFaturados)}  (lendo…)`);
+    const quando = new Date(fs.statSync(arqFaturados).mtimeMs).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    console.log(`  Faturados ${arqFaturados}  (atualizado em ${quando}; lendo…)`);
     const linhas = await lerCsvGrande(arqFaturados, [...COLUNAS_FATURADOS, 'Nome', 'Nr. Pedido', 'Origem do Pedido', 'Nota']);
     const falta = colunasFaltando(linhas[0], COLUNAS_FATURADOS);
     if (falta.length) throw new ErroFechamento(`No arquivo de faturados faltam as colunas: ${falta.join(', ')}.`);

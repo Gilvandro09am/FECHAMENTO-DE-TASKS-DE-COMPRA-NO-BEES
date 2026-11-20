@@ -775,7 +775,11 @@ function renderDes() {
   $('src').innerHTML =
     `Desafios de tarefas de <b>${dataBr(a.dia)} (${diaSemana(a.dia)})</b>. Real = tarefas <b>validadas no BEES</b> no dia ` +
     `(quando o export de tarefas já cobre o dia) ou a <b>prévia</b> pelos pedidos do dia.` +
-    (semExport.length ? ` Export do BEES ainda sem ${dataBr(a.dia)}: ${semExport.map(esc).join(', ')}.` : '');
+    (semExport.length ? ` Export do BEES ainda sem ${dataBr(a.dia)}: ${semExport.map(esc).join(', ')}.` : '') +
+    // Export de tarefas tirado no próprio dia: as validadas do dia ainda vão crescer.
+    (setores.some((s) => a.referencia[s.unb] === a.dia)
+      ? ` <b>Validadas de ${dataBr(a.dia)} ainda parciais</b>: o export de tarefas é do próprio dia; o número fecha com o export de amanhã.`
+      : '');
   $('foot').innerHTML =
     'Só as colunas de tarefas dos desafios entram; Volume/Faturamento fica de fora. Colunas: Cerveja = Portfólio de categoria Cerveja; ' +
     'NAB = Portfólio de NAB; Marketplace; LN = cesta LN HE (export de Long Neck); SKU/PDV = cluster secundário SKU/PDV; ' +
